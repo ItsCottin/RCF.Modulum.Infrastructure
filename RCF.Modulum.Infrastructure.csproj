@@ -36,7 +36,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="RCF.Modulum.Application" Version="0.0.1-beta.2" />
+    <PackageReference Include="RCF.Modulum.Application" Version="0.0.1-beta.3" />
     <PackageReference Include="RCF.Modulum.Shared" Version="0.0.1-beta.3" />
   </ItemGroup>
 
