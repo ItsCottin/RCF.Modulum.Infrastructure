@@ -1,0 +1,87 @@
+name: Publish NuGet Package
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0'  # Ajuste conforme necessário
+
+      - name: Get current version from GitHub environment variable
+        id: get_version
+        run: |
+          VERSION=$(curl -H "Authorization: Bearer ${{ secrets.token }}" \
+                        -H "Accept: application/vnd.github.v3+json" \
+                        https://api.github.com/repos/ItsCottin/RCF.Modulum.Infrastructure/environments/deploy/variables/RCF_MODULUM_INFRASTRUCTURE_VERSION \
+                        | jq -r '.value')
+
+          # Se a versão ainda não estiver definida, define como 0.0.1-beta.1
+          if [ "$VERSION" == "null" ] || [ -z "$VERSION" ]; then
+            VERSION="0.0.1-beta.1"
+          fi
+
+          echo "current_version=$VERSION" >> $GITHUB_ENV
+          echo "Versão atual: $VERSION"
+
+      - name: Increment version
+        id: increment_version
+        run: |
+          CURRENT_VERSION=${{ env.current_version }}
+          
+          # Extrai os números da versão (x.x.x-beta.y)
+          MAJOR=$(echo "$CURRENT_VERSION" | cut -d '.' -f1)
+          MINOR=$(echo "$CURRENT_VERSION" | cut -d '.' -f2)
+          PATCH=$(echo "$CURRENT_VERSION" | cut -d '.' -f3 | cut -d '-' -f1)
+          BETA=$(echo "$CURRENT_VERSION" | cut -d '.' -f4 | cut -d '-' -f2)
+
+          # Incrementa a versão beta
+          if [ "$BETA" -lt 9 ]; then
+            BETA=$((BETA + 1))
+          else
+            PATCH=$((PATCH + 1))
+            BETA=1
+          fi
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH-beta.$BETA"
+
+          echo "Nova versão: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_ENV
+          echo "Current version from environment: ${{ env.current_version }}"
+
+      - name: Update environment variable VERSION
+        run: |
+          NEW_VERSION=${{ env.new_version }}
+          echo "Current version from environment: ${{ env.current_version }}"
+          curl -X PATCH \
+            -H "Authorization: Bearer ${{ secrets.token }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"RCF_MODULUM_INFRASTRUCTURE_VERSION\", \"value\":\"$NEW_VERSION\"}" \
+            https://api.github.com/repos/ItsCottin/RCF.Modulum.Infrastructure/environments/deploy/variables/RCF_MODULUM_INFRASTRUCTURE_VERSION
+
+      - name: Restore Dependencies
+        run: dotnet restore
+
+      - name: Build Project
+        run: dotnet build --configuration Release
+
+      - name: Pack NuGet Package
+        run: dotnet pack --configuration Release -p:Version=${{ env.new_version }} --output nupkgs
+
+      - name: Publish NuGet Package - GitHub
+        run: dotnet nuget push nupkgs/*.nupkg --source "https://nuget.pkg.github.com/ItsCottin/index.json" --api-key ${{ secrets.token }} --skip-duplicate
+        
+      - name: Publish NuGet Package - NuGet.org
+        run: dotnet nuget push nupkgs/*.nupkg --source "https://api.nuget.org/v3/index.json" --api-key ${{ secrets.TOKEN_NUGET_ORG }} --skip-duplicate
