@@ -17,9 +17,9 @@ namespace Infrastructure.Contexts
         {
             var optionsBuilder = new DbContextOptionsBuilder<ModulumContext>();
 
-            // Defina a string de conexão diretamente aqui ou passe como argumento se preferir
-            var connectionString = "Server=tcp:modulum.mssql.somee.com;Initial Catalog=modulum;Persist Security Info=False;User ID=Cottin_SQLLogin_1;Password=o4kd997ajw;MultipleActiveResultSets=False;Encrypt=False;TrustServerCertificate=False;Connection Timeout=30;";
-            optionsBuilder.UseSqlServer(connectionString);
+            var connectionString = Environment.GetEnvironmentVariable("MODULUM_CONNECTION_STRING");
+            optionsBuilder.UseSqlServer(connectionString,
+                b => b.MigrationsAssembly(typeof(ModulumContext).Assembly.GetName().Name));
 
             // Serviços falsos para injeção de dependência em tempo de design
             var currentUserService = new CurrentUserServiceFake();

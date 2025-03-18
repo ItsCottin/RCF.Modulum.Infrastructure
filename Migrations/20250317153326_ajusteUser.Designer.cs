@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using modulum.Infrastructure.Contexts;
 
@@ -11,9 +12,11 @@ using modulum.Infrastructure.Contexts;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ModulumContext))]
-    partial class ModulumContextModelSnapshot : ModelSnapshot
+    [Migration("20250317153326_ajusteUser")]
+    partial class ajusteUser
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
