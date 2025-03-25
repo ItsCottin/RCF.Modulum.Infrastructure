@@ -15,16 +15,13 @@ namespace modulum.Infrastructure.Services.Identity
     {
         private readonly UserManager<ModulumUser> _userManager;
         private readonly SignInManager<ModulumUser> _signInManager;
-        private readonly IStringLocalizer<AccountService> _localizer;
 
         public AccountService(
             UserManager<ModulumUser> userManager,
-            SignInManager<ModulumUser> signInManager,
-            IStringLocalizer<AccountService> localizer)
+            SignInManager<ModulumUser> signInManager)
         {
             _userManager = userManager;
             _signInManager = signInManager;
-            _localizer = localizer;
         }
 
         public async Task<IResult> ChangePasswordAsync(ChangePasswordRequest model, string userId)
@@ -32,14 +29,14 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await this._userManager.FindByIdAsync(userId);
             if (user == null)
             {
-                return await Result.FailAsync(_localizer["User Not Found."]);
+                return await Result.FailAsync("User Not Found.");
             }
 
             var identityResult = await this._userManager.ChangePasswordAsync(
                 user,
                 model.Password,
                 model.NewPassword);
-            var errors = identityResult.Errors.Select(e => _localizer[e.Description].ToString()).ToList();
+            var errors = identityResult.Errors.Select(e => e.Description.ToString()).ToList();
             return identityResult.Succeeded ? await Result.SuccessAsync() : await Result.FailAsync(errors);
         }
 

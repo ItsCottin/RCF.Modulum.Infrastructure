@@ -71,9 +71,10 @@ jobs:
             -d "{\"name\":\"RCF_MODULUM_INFRASTRUCTURE_VERSION\", \"value\":\"$NEW_VERSION\"}" \
             https://api.github.com/repos/ItsCottin/RCF.Modulum.Infrastructure/environments/deploy/variables/RCF_MODULUM_INFRASTRUCTURE_VERSION
 
-      - name: Set MODULUM_CONNECTION_STRING environment variable
+      - name: Set MODULUM_CONNECTION_STRING and MODULUM_SECRET_JWT environment variable
         run: |
           echo "MODULUM_CONNECTION_STRING=${{ secrets.MODULUM_CONNECTION_STRING }}" >> $GITHUB_ENV
+          echo "MODULUM_SECRET_JWT=${{ secrets.MODULUM_SECRET_JWT }}" >> $GITHUB_ENV
 
       - name: Restore Dependencies
         run: dotnet restore

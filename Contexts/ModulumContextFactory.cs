@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using modulum.Shared.Constants.Application;
 
 namespace Infrastructure.Contexts
 {
@@ -17,7 +18,7 @@ namespace Infrastructure.Contexts
         {
             var optionsBuilder = new DbContextOptionsBuilder<ModulumContext>();
 
-            var connectionString = Environment.GetEnvironmentVariable("MODULUM_CONNECTION_STRING");
+            var connectionString = Environment.GetEnvironmentVariable(ApplicationConstants.Variable.ModulumConnectionString);
             optionsBuilder.UseSqlServer(connectionString,
                 b => b.MigrationsAssembly(typeof(ModulumContext).Assembly.GetName().Name));
 

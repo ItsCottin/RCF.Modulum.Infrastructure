@@ -7,6 +7,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using System.Reflection.Emit;
+using modulum.Domain.Entities.MapCoreEntity;
 
 namespace modulum.Infrastructure.Contexts
 {
@@ -23,6 +25,9 @@ namespace modulum.Infrastructure.Contexts
         }
 
         public DbSet<ModulumUser> ModulumUsers { get; set; }
+
+        public DbSet<Table> Tables { get; set; }
+        public DbSet<Field> Fields { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -65,6 +70,13 @@ namespace modulum.Infrastructure.Contexts
             {
                 entity.ToTable("tbl_user_token", "dbo");
             });
+
+            builder.Entity<IdentityRoleClaim<string>>(entity =>
+            {
+                entity.ToTable("tbl_role_claim", "dbo");
+            });
+
+            builder.Entity<Table>().HasMany(t => t.Fields).WithOne(f => f.Table).HasForeignKey(f => f.TableId);
         }
     }
 }

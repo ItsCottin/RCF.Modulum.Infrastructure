@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.DataProtection;
 using modulum.Application.Interfaces.Repositories;
 using modulum.Shared.Models;
 using System.Runtime.InteropServices;
+using modulum.Shared.Constants.Application;
 
 namespace modulum.Infrastructure.Services.Identity
 {
@@ -31,18 +32,15 @@ namespace modulum.Infrastructure.Services.Identity
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly AppConfiguration _appConfig;
         private readonly SignInManager<ModulumUser> _signInManager;
-        private readonly IStringLocalizer<IdentityService> _localizer;
 
         public IdentityService(
             UserManager<ModulumUser> userManager, RoleManager<IdentityRole> roleManager,
-            IOptions<AppConfiguration> appConfig, SignInManager<ModulumUser> signInManager,
-            IStringLocalizer<IdentityService> localizer)
+            IOptions<AppConfiguration> appConfig, SignInManager<ModulumUser> signInManager)
         {
             _userManager = userManager;
             _roleManager = roleManager;
             _appConfig = appConfig.Value;
             _signInManager = signInManager;
-            _localizer = localizer;
         }
 
         public async Task<Result<TokenResponse>> LoginAsync(TokenRequest model)
@@ -50,7 +48,7 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)
             {
-                return await Result<TokenResponse>.FailAsync(_localizer["User Not Found."]);
+                return await Result<TokenResponse>.FailAsync("Usuario não encontrado.");
             }
             //if (!user.IsActive)
             //{
@@ -58,12 +56,12 @@ namespace modulum.Infrastructure.Services.Identity
             //}
             if (!user.EmailConfirmed)
             {
-                return await Result<TokenResponse>.FailAsync(_localizer["E-Mail not confirmed."]);
+                return await Result<TokenResponse>.FailAsync("E-Mail não confirmado.");
             }
             var passwordValid = await _userManager.CheckPasswordAsync(user, model.Password);
             if (!passwordValid)
             {
-                return await Result<TokenResponse>.FailAsync(_localizer["Invalid Credentials."]);
+                return await Result<TokenResponse>.FailAsync("Credenciais inválidas.");
             }
 
             user.RefreshToken = GenerateRefreshToken();
@@ -79,18 +77,18 @@ namespace modulum.Infrastructure.Services.Identity
         {
             if (model is null)
             {
-                return await Result<TokenResponse>.FailAsync(_localizer["Invalid Client Token."]);
+                return await Result<TokenResponse>.FailAsync("Client Token inválido.");
             }
             var userPrincipal = GetPrincipalFromExpiredToken(model.Token);
             var userEmail = userPrincipal.FindFirstValue(ClaimTypes.Email);
             var user = await _userManager.FindByEmailAsync(userEmail);
             if (user == null)
             {
-                return await Result<TokenResponse>.FailAsync(_localizer["User Not Found."]);
+                return await Result<TokenResponse>.FailAsync("User Not Found.");
             }
             if (user.RefreshToken != model.RefreshToken || user.RefreshTokenExpiryTime <= DateTime.Now)
             {
-                return await Result<TokenResponse>.FailAsync(_localizer["Invalid Client Token."]);
+                return await Result<TokenResponse>.FailAsync("Invalid Client Token.");
             }
             var token = GenerateEncryptedToken(GetSigningCredentials(), await GetClaimsAsync(user));
             user.RefreshToken = GenerateRefreshToken();
@@ -116,8 +114,8 @@ namespace modulum.Infrastructure.Services.Identity
             {
                 roleClaims.Add(new Claim(ClaimTypes.Role, role));
                 var thisRole = await _roleManager.FindByNameAsync(role);
-                var allPermissionsForThisRoles = await _roleManager.GetClaimsAsync(thisRole);
-                permissionClaims.AddRange(allPermissionsForThisRoles);
+                //var allPermissionsForThisRoles = await _roleManager.GetClaimsAsync(thisRole);
+                //permissionClaims.AddRange(allPermissionsForThisRoles);
             }
 
             var claims = new List<Claim>
@@ -127,8 +125,8 @@ namespace modulum.Infrastructure.Services.Identity
                 new(ClaimTypes.Name, user.NomeCompleto)
             }
             .Union(userClaims)
-            .Union(roleClaims)
-            .Union(permissionClaims);
+            .Union(roleClaims);
+            //.Union(permissionClaims);
 
             return claims;
         }
@@ -146,8 +144,8 @@ namespace modulum.Infrastructure.Services.Identity
             var token = new JwtSecurityToken(
                 claims: claims,
                 expires: DateTime.UtcNow.AddDays(2),
-                audience: "https://localhost:7239",
-                issuer: "https://localhost:7239",
+                audience: "https://localhost:7051", // TODO ponto onde deve ser alterado para aceitar chamada do front do azure
+                issuer: "https://localhost:7051",
                 signingCredentials: signingCredentials
             );
             var tokenHandler = new JwtSecurityTokenHandler();
@@ -160,7 +158,7 @@ namespace modulum.Infrastructure.Services.Identity
             var tokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_appConfig.Secret)),
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Environment.GetEnvironmentVariable(ApplicationConstants.Variable.ModulumSecretJWT) ?? _appConfig.Secret)),
                 ValidateIssuer = false,
                 ValidateAudience = false,
                 RoleClaimType = ClaimTypes.Role,
@@ -172,7 +170,7 @@ namespace modulum.Infrastructure.Services.Identity
             if (securityToken is not JwtSecurityToken jwtSecurityToken || !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256,
                 StringComparison.InvariantCultureIgnoreCase))
             {
-                throw new SecurityTokenException(_localizer["Invalid token"]);
+                throw new SecurityTokenException("Token Inválido");
             }
 
             return principal;
@@ -181,8 +179,8 @@ namespace modulum.Infrastructure.Services.Identity
         private SigningCredentials GetSigningCredentials()
         {
             //string ramdumNumber = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-            //var secret = Encoding.UTF8.GetBytes(ramdumNumber);
-            var secret = Encoding.UTF8.GetBytes(_appConfig.Secret);
+            //var secret2 = Encoding.UTF8.GetBytes(ramdumNumber);
+            var secret = Encoding.UTF8.GetBytes(Environment.GetEnvironmentVariable(ApplicationConstants.Variable.ModulumSecretJWT) ?? _appConfig.Secret);
             return new SigningCredentials(new SymmetricSecurityKey(secret), SecurityAlgorithms.HmacSha256);
         }
 
