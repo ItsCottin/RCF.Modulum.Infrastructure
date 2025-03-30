@@ -8,6 +8,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Localization;
+using Microsoft.AspNetCore.WebUtilities;
+using System.Text;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace modulum.Infrastructure.Services.Identity
 {
@@ -77,5 +80,36 @@ namespace modulum.Infrastructure.Services.Identity
         //        return await Result.FailAsync(string.Format(_localizer["Email {0} is already used."], request.Email));
         //    }
         //}
+
+        public async Task<IResult> ConfirmEmail(string userId, string token)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(token))
+            {
+                return await Result.FailAsync("Por favor confirme seu e-mail na caixa de entrada.");
+            }
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user != null)
+            {
+                var decodedToken = WebEncoders.Base64UrlDecode(token);
+                string normalToken = Encoding.UTF8.GetString(decodedToken);
+                var result = await _userManager.ConfirmEmailAsync(user, normalToken);
+                if (result.Succeeded)
+                {
+                    return await Result.SuccessAsync("E-mail confirmado com sucesso");
+                }
+                return await Result.FailAsync("Houve um erro, mais não é sua culpa");
+            }
+            return await Result.FailAsync("Houve um erro, mais não é sua culpa");
+        }
+
+        public async Task<IResult> IsEmailConfirmed(string email)
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            if (user == null)
+            {
+                return await Result.FailAsync("Não existe usuario com E-mail informado");
+            }
+            return user.EmailConfirmed ? await Result.SuccessAsync("E-mail informado está confirmado") : await Result.FailAsync("E-mail informado não está confirmado, Por favor confirme seu e - mail na caixa de entrada.");
+        }
     }
 }
