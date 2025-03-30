@@ -32,7 +32,7 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await this._userManager.FindByIdAsync(userId);
             if (user == null)
             {
-                return await Result.FailAsync("User Not Found.");
+                return await Result.FailAsync("Usuário não encontrado.");
             }
 
             var identityResult = await this._userManager.ChangePasswordAsync(

@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Localization;
+using modulum.Application.Interfaces.Services.Account;
 
 namespace modulum.Infrastructure.Services.Identity
 {
@@ -28,7 +29,7 @@ namespace modulum.Infrastructure.Services.Identity
     {
         private readonly UserManager<ModulumUser> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
-        private readonly IMailService _mailService;
+        private readonly IEmailService _emailService;
         private readonly ICurrentUserService _currentUserService;
         private readonly IMapper _mapper;
 
@@ -36,13 +37,13 @@ namespace modulum.Infrastructure.Services.Identity
             UserManager<ModulumUser> userManager,
             IMapper mapper,
             RoleManager<IdentityRole> roleManager,
-            IMailService mailService,
+            IEmailService emailService,
             ICurrentUserService currentUserService)
         {
             _userManager = userManager;
             _mapper = mapper;
             _roleManager = roleManager;
-            _mailService = mailService;
+            _emailService = emailService;
             _currentUserService = currentUserService;
         }
 
@@ -58,7 +59,7 @@ namespace modulum.Infrastructure.Services.Identity
             var userWithSameUserName = await _userManager.FindByNameAsync(request.UserName);
             if (userWithSameUserName != null)
             {
-                return await Result.FailAsync(string.Format("Username {0} is already taken.", request.UserName));
+                return await Result.FailAsync(string.Format("O nome de usuário {0} já existe.", request.UserName));
             }
             var user = new ModulumUser
             {
@@ -84,17 +85,33 @@ namespace modulum.Infrastructure.Services.Identity
                 if (result.Succeeded)
                 {
                     await _userManager.AddToRoleAsync(user, RoleConstants.BasicRole);
+                    var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user); //newUser
+                    var encodeEmailToken = Encoding.UTF8.GetBytes(confirmEmailToken);
+                    var validEmailToken = WebEncoders.Base64UrlEncode(encodeEmailToken);
+                    string url = $"{origin}/confirm-email/{user.Id}/{validEmailToken}"; //newUser
+                    
                     if (!request.EmailConfirmed)
                     {
-                        var verificationUri = await SendVerificationEmail(user, origin);
-                        var mailRequest = new MailRequest
+                        //var verificationUri = await SendVerificationEmail(user, origin);
+                        //var mailRequest = new MailRequest
+                        //{
+                        //   From = "mail@codewithmukesh.com",
+                        //    To = user.Email,
+                        //    Body = string.Format("Please confirm your account by <a href='{0}'>clicking here</a>.", verificationUri),
+                        //    Subject = "Confirm Registration"
+                        //};
+                        var requestDto = new MailRequest
                         {
-                            From = "mail@codewithmukesh.com",
-                            To = user.Email,
-                            Body = string.Format("Please confirm your account by <a href='{0}'>clicking here</a>.", verificationUri),
-                            Subject = "Confirm Registration"
+                            From = "modulumprojeto@gmail.com",
+                            To = user.Email, //newUser
+                            Subject = "Confirme seu E-mail",
+                            Body = $@"Olá, <br /> <br />
+Recebemos sua solicitação de registro para o nosso sistema Modulum. <br /> <br />
+Para confirmar sua inscrição clique no link a seguir: <a href=""{url}"">confirme seu cadastro</a> <br /> <br />
+Se você não solicitou esse registro, pode ignorar este e-mail com segurança. Outra pessoa pode ter digitado seu endereço de e-mail por engano."
                         };
-                        BackgroundJob.Enqueue(() => _mailService.SendAsync(mailRequest));
+                        var retunText = await _emailService.SendEmail(requestDto);
+                        //BackgroundJob.Enqueue(() => _mailService.SendAsync(mailRequest));
                         return await Result<string>.SuccessAsync(user.Id, string.Format("User {0} Registered. Please check your Mailbox to verify!", user.UserName));
                     }
                     return await Result<string>.SuccessAsync(user.Id, string.Format("User {0} Registered.", user.UserName));
@@ -205,11 +222,11 @@ namespace modulum.Infrastructure.Services.Identity
             var result = await _userManager.ConfirmEmailAsync(user, code);
             if (result.Succeeded)
             {
-                return await Result<string>.SuccessAsync(user.Id, string.Format("Account Confirmed for {0}. You can now use the /api/identity/token endpoint to generate JWT.", user.Email));
+                return await Result<string>.SuccessAsync(user.Id, string.Format("Conta {0} confirmada com sucesso.", user.Email));
             }
             else
             {
-                throw new ApiException(string.Format("An error occurred while confirming {0}", user.Email));
+                throw new ApiException(string.Format("Ocorreu um erro ao confirmar {0}", user.Email));
             }
         }
 
@@ -219,7 +236,7 @@ namespace modulum.Infrastructure.Services.Identity
             if (user == null || !(await _userManager.IsEmailConfirmedAsync(user)))
             {
                 // Don't reveal that the user does not exist or is not confirmed
-                return await Result.FailAsync("An Error has occurred!");
+                return await Result.FailAsync("Ocorreu um erro");
             }
             // For more information on how to enable account confirmation and password reset please
             // visit https://go.microsoft.com/fwlink/?LinkID=532713
@@ -230,12 +247,12 @@ namespace modulum.Infrastructure.Services.Identity
             var passwordResetURL = QueryHelpers.AddQueryString(endpointUri.ToString(), "Token", code);
             var mailRequest = new MailRequest
             {
-                Body = string.Format("Please reset your password by <a href='{0}'>clicking here</a>.", HtmlEncoder.Default.Encode(passwordResetURL)),
-                Subject = "Reset Password",
+                Body = string.Format("Por favor, redefina sua senha <a href='{0}'>clicando aqui</a>.", HtmlEncoder.Default.Encode(passwordResetURL)),
+                Subject = "Redefinir senha",
                 To = request.Email
             };
-            BackgroundJob.Enqueue(() => _mailService.SendAsync(mailRequest));
-            return await Result.SuccessAsync("Password Reset Mail has been sent to your authorized Email.");
+            var retunText = await _emailService.SendEmail(mailRequest);
+            return await Result.SuccessAsync("O e-mail de redefinição de senha foi enviado para seu e-mail autorizado.");
         }
 
         public async Task<IResult> ResetPasswordAsync(ResetPasswordRequest request)
@@ -244,17 +261,17 @@ namespace modulum.Infrastructure.Services.Identity
             if (user == null)
             {
                 // Don't reveal that the user does not exist
-                return await Result.FailAsync("An Error has occured!");
+                return await Result.FailAsync("Ocorreu um erro!");
             }
 
             var result = await _userManager.ResetPasswordAsync(user, request.Token, request.Password);
             if (result.Succeeded)
             {
-                return await Result.SuccessAsync("Password Reset Successful!");
+                return await Result.SuccessAsync("Redefinição de senha bem-sucedida!");
             }
             else
             {
-                return await Result.FailAsync("An Error has occured!");
+                return await Result.FailAsync("Ocorreu um erro!");
             }
         }
 
