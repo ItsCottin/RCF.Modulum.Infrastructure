@@ -82,7 +82,7 @@ namespace modulum.Infrastructure.Services.Identity
                     var validEmailToken = WebUtility.UrlEncode(confirmEmailToken); // Solução dada pelo ChatGPT
                     //var encodeEmailToken = Encoding.UTF8.GetBytes(confirmEmailToken); // Problema com geração do token grande demais
                     //var validEmailToken = WebEncoders.Base64UrlEncode(encodeEmailToken);
-                    string url = $"{Environment.GetEnvironmentVariable(ApplicationConstants.Variable.UrlClient)}/confirm-email/{user.Id}/{validEmailToken}"; //newUser
+                    string url = $"{Environment.GetEnvironmentVariable(ApplicationConstants.Variable.UrlClient)}/confirm-email?userId={user.Id}&token={validEmailToken}"; //newUser
                     
                     if (!request.EmailConfirmed)
                     {
