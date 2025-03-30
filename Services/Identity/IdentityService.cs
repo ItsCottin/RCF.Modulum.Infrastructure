@@ -26,7 +26,7 @@ namespace modulum.Infrastructure.Services.Identity
 {
     public class IdentityService : ITokenService
     {
-        private const string InvalidErrorMessage = "Invalid email or password.";
+        private const string InvalidErrorMessage = "E-mail ou senha inválidos.";
 
         private readonly UserManager<ModulumUser> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
@@ -84,11 +84,11 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByEmailAsync(userEmail);
             if (user == null)
             {
-                return await Result<TokenResponse>.FailAsync("User Not Found.");
+                return await Result<TokenResponse>.FailAsync("Usuário não encontrado.");
             }
             if (user.RefreshToken != model.RefreshToken || user.RefreshTokenExpiryTime <= DateTime.Now)
             {
-                return await Result<TokenResponse>.FailAsync("Invalid Client Token.");
+                return await Result<TokenResponse>.FailAsync("Token inválido.");
             }
             var token = GenerateEncryptedToken(GetSigningCredentials(), await GetClaimsAsync(user));
             user.RefreshToken = GenerateRefreshToken();

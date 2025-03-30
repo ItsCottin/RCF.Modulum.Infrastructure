@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Localization;
 using modulum.Application.Interfaces.Services.Account;
+using modulum.Shared.Constants.Application;
 
 namespace modulum.Infrastructure.Services.Identity
 {
@@ -66,7 +67,7 @@ namespace modulum.Infrastructure.Services.Identity
                 Email = request.Email,
                 NomeCompleto = request.NomeCompleto,
                 UserName = request.UserName,
-                EmailConfirmed = request.EmailConfirmed                
+                EmailConfirmed = false                
             };
 
             //if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
@@ -88,7 +89,7 @@ namespace modulum.Infrastructure.Services.Identity
                     var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user); //newUser
                     var encodeEmailToken = Encoding.UTF8.GetBytes(confirmEmailToken);
                     var validEmailToken = WebEncoders.Base64UrlEncode(encodeEmailToken);
-                    string url = $"{origin}/confirm-email/{user.Id}/{validEmailToken}"; //newUser
+                    string url = $"{Environment.GetEnvironmentVariable(ApplicationConstants.Variable.UrlClient)}/confirm-email/{user.Id}/{validEmailToken}"; //newUser
                     
                     if (!request.EmailConfirmed)
                     {
