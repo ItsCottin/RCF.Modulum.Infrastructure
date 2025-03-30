@@ -24,6 +24,7 @@ using Microsoft.Extensions.Localization;
 using modulum.Application.Interfaces.Services.Account;
 using modulum.Shared.Constants.Application;
 using System.Net;
+using modulum.Domain.Entities.MapCoreEntity;
 
 namespace modulum.Infrastructure.Services.Identity
 {
@@ -61,7 +62,8 @@ namespace modulum.Infrastructure.Services.Identity
             var userWithSameUserName = await _userManager.FindByNameAsync(request.UserName);
             if (userWithSameUserName != null)
             {
-                return await Result.FailAsync(string.Format("O nome de usuário {0} já existe.", request.UserName));
+                var fields = new Dictionary<string, object>{{ "UserName", string.Format("O nome de usuário '{0}' já existe.", request.UserName)} };
+                return await Result.FailAsync(string.Format("O nome de usuário '{0}' já existe.", request.UserName), fields);
             }
             var user = new ModulumUser
             {
@@ -97,9 +99,10 @@ Para confirmar sua inscrição clique no link a seguir: <a href=""{url}"">confir
 Se você não solicitou esse registro, pode ignorar este e-mail com segurança. Outra pessoa pode ter digitado seu endereço de e-mail por engano."
                         };
                         var retunText = await _emailService.SendEmail(requestDto);
-                        return await Result<string>.SuccessAsync(user.Id, string.Format("User {0} Registered. Please check your Mailbox to verify!", user.UserName));
+                        var fields = new Dictionary<string, object> { { "AtivacaoEmail", url } };
+                        return await Result<string>.SuccessAsync(user.Id, string.Format("Usuário {0} registrado. Por favor, verifique sua caixa de entrada para ativar seu cadastro", user.UserName, fields));
                     }
-                    return await Result<string>.SuccessAsync(user.Id, string.Format("User {0} Registered.", user.UserName));
+                    return await Result<string>.SuccessAsync(user.Id, string.Format("Usuário {0} registrado.", user.UserName));
                 }
                 else
                 {
@@ -108,19 +111,9 @@ Se você não solicitou esse registro, pode ignorar este e-mail com segurança. 
             }
             else
             {
-                return await Result.FailAsync(string.Format("Email {0} is already registered.", request.Email));
+                var fields = new Dictionary<string, object> { { "Email", string.Format("O E-mail {0} já está registrado.", request.Email) } };
+                return await Result.FailAsync(string.Format("O E-mail {0} já está registrado.", request.Email), fields);
             }
-        }
-
-        private async Task<string> SendVerificationEmail(ModulumUser user, string origin)
-        {
-            var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
-            var route = "api/identity/user/confirm-email/";
-            var endpointUri = new Uri(string.Concat($"{origin}/", route));
-            var verificationUri = QueryHelpers.AddQueryString(endpointUri.ToString(), "userId", user.Id);
-            verificationUri = QueryHelpers.AddQueryString(verificationUri, "code", code);
-            return verificationUri;
         }
 
         public async Task<IResult<UserResponse>> GetAsync(string userId)
@@ -220,11 +213,8 @@ Se você não solicitou esse registro, pode ignorar este e-mail com segurança. 
             var user = await _userManager.FindByEmailAsync(request.Email);
             if (user == null || !(await _userManager.IsEmailConfirmedAsync(user)))
             {
-                // Don't reveal that the user does not exist or is not confirmed
                 return await Result.FailAsync("Ocorreu um erro");
             }
-            // For more information on how to enable account confirmation and password reset please
-            // visit https://go.microsoft.com/fwlink/?LinkID=532713
             var code = await _userManager.GeneratePasswordResetTokenAsync(user);
             code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
             var route = "account/reset-password";

@@ -48,7 +48,8 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)
             {
-                return await Result<TokenResponse>.FailAsync("Usuario não encontrado.");
+                var fields = new Dictionary<string, object> { { "Email", "Usuário não encontrado." } };
+                return await Result<TokenResponse>.FailAsync("Usuario não encontrado.", fields);
             }
             //if (!user.IsActive)
             //{
@@ -56,12 +57,14 @@ namespace modulum.Infrastructure.Services.Identity
             //}
             if (!user.EmailConfirmed)
             {
-                return await Result<TokenResponse>.FailAsync("E-Mail não confirmado.");
+                var fields = new Dictionary<string, object> { { "Email", "E-Mail não confirmado." } };
+                return await Result<TokenResponse>.FailAsync("E-Mail não confirmado.", fields);
             }
             var passwordValid = await _userManager.CheckPasswordAsync(user, model.Password);
             if (!passwordValid)
             {
-                return await Result<TokenResponse>.FailAsync("Credenciais inválidas.");
+                var fields = new Dictionary<string, object> { { "Password", "Senha inválida." } };
+                return await Result<TokenResponse>.FailAsync("Senha inválida.", fields);
             }
 
             user.RefreshToken = GenerateRefreshToken();
@@ -84,7 +87,8 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByEmailAsync(userEmail);
             if (user == null)
             {
-                return await Result<TokenResponse>.FailAsync("Usuário não encontrado.");
+                var fields = new Dictionary<string, object> { { "Email", "Usuário não encontrado." } };
+                return await Result<TokenResponse>.FailAsync("Usuário não encontrado.", fields);
             }
             if (user.RefreshToken != model.RefreshToken || user.RefreshTokenExpiryTime <= DateTime.Now)
             {
