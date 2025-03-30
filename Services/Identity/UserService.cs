@@ -23,6 +23,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Localization;
 using modulum.Application.Interfaces.Services.Account;
 using modulum.Shared.Constants.Application;
+using System.Net;
 
 namespace modulum.Infrastructure.Services.Identity
 {
@@ -70,15 +71,6 @@ namespace modulum.Infrastructure.Services.Identity
                 EmailConfirmed = false                
             };
 
-            //if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
-            //{
-            //    var userWithSamePhoneNumber = await _userManager.Users.FirstOrDefaultAsync(x => x.PhoneNumber == request.PhoneNumber);
-            //    if (userWithSamePhoneNumber != null)
-            //    {
-            //        return await Result.FailAsync(string.Format(_localizer["Phone number {0} is already registered."], request.PhoneNumber));
-            //    }
-            //}
-
             var userWithSameEmail = await _userManager.FindByEmailAsync(request.Email);
             if (userWithSameEmail == null)
             {
@@ -87,20 +79,13 @@ namespace modulum.Infrastructure.Services.Identity
                 {
                     await _userManager.AddToRoleAsync(user, RoleConstants.BasicRole);
                     var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user); //newUser
-                    var encodeEmailToken = Encoding.UTF8.GetBytes(confirmEmailToken);
-                    var validEmailToken = WebEncoders.Base64UrlEncode(encodeEmailToken);
+                    var validEmailToken = WebUtility.UrlEncode(confirmEmailToken); // Solução dada pelo ChatGPT
+                    //var encodeEmailToken = Encoding.UTF8.GetBytes(confirmEmailToken); // Problema com geração do token grande demais
+                    //var validEmailToken = WebEncoders.Base64UrlEncode(encodeEmailToken);
                     string url = $"{Environment.GetEnvironmentVariable(ApplicationConstants.Variable.UrlClient)}/confirm-email/{user.Id}/{validEmailToken}"; //newUser
                     
                     if (!request.EmailConfirmed)
                     {
-                        //var verificationUri = await SendVerificationEmail(user, origin);
-                        //var mailRequest = new MailRequest
-                        //{
-                        //   From = "mail@codewithmukesh.com",
-                        //    To = user.Email,
-                        //    Body = string.Format("Please confirm your account by <a href='{0}'>clicking here</a>.", verificationUri),
-                        //    Subject = "Confirm Registration"
-                        //};
                         var requestDto = new MailRequest
                         {
                             From = "modulumprojeto@gmail.com",
@@ -112,7 +97,6 @@ Para confirmar sua inscrição clique no link a seguir: <a href=""{url}"">confir
 Se você não solicitou esse registro, pode ignorar este e-mail com segurança. Outra pessoa pode ter digitado seu endereço de e-mail por engano."
                         };
                         var retunText = await _emailService.SendEmail(requestDto);
-                        //BackgroundJob.Enqueue(() => _mailService.SendAsync(mailRequest));
                         return await Result<string>.SuccessAsync(user.Id, string.Format("User {0} Registered. Please check your Mailbox to verify!", user.UserName));
                     }
                     return await Result<string>.SuccessAsync(user.Id, string.Format("User {0} Registered.", user.UserName));

@@ -11,6 +11,7 @@ using Microsoft.Extensions.Localization;
 using Microsoft.AspNetCore.WebUtilities;
 using System.Text;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Net;
 
 namespace modulum.Infrastructure.Services.Identity
 {
@@ -90,8 +91,11 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByIdAsync(userId);
             if (user != null)
             {
-                var decodedToken = WebEncoders.Base64UrlDecode(token);
-                string normalToken = Encoding.UTF8.GetString(decodedToken);
+                //var decodedToken = WebEncoders.Base64UrlDecode(token);
+                //string normalToken = Encoding.UTF8.GetString(decodedToken);
+
+                // Ajuste para utilizar WebUtility
+                var normalToken = WebUtility.UrlDecode(token);
                 var result = await _userManager.ConfirmEmailAsync(user, normalToken);
                 if (result.Succeeded)
                 {
