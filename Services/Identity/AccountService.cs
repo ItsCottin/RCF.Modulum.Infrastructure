@@ -91,12 +91,16 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByIdAsync(userId);
             if (user != null)
             {
+                if (!user.EmailConfirmed)
+                {
+                    return await Result.FailAsync("O E-mail informado já esta confirmado");
+                }
                 //var decodedToken = WebEncoders.Base64UrlDecode(token);
                 //string normalToken = Encoding.UTF8.GetString(decodedToken);
 
                 // Ajuste para utilizar WebUtility
                 var normalToken = WebUtility.UrlDecode(token);
-                var result = await _userManager.ConfirmEmailAsync(user, normalToken);
+                var result = await _userManager.ConfirmEmailAsync(user, normalToken.Replace(" ", "+")); // Fixed token
                 if (result.Succeeded)
                 {
                     return await Result.SuccessAsync("E-mail confirmado com sucesso");
