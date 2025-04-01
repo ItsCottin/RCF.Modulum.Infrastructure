@@ -92,7 +92,7 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByIdAsync(userId);
             if (user != null)
             {
-                if (!user.EmailConfirmed)
+                if (user.EmailConfirmed)
                 {
                     return await Result.FailAsync("O E-mail informado já esta confirmado");
                 }
