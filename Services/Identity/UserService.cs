@@ -62,7 +62,7 @@ namespace modulum.Infrastructure.Services.Identity
             var userWithSameUserName = await _userManager.FindByNameAsync(request.UserName);
             if (userWithSameUserName != null)
             {
-                var fields = new Dictionary<string, object>{{ "UserName", string.Format("O nome de usuário '{0}' já existe.", request.UserName)} };
+                var fields = new Dictionary<string, string> {{ "UserName", string.Format("O nome de usuário '{0}' já existe.", request.UserName)} };
                 return await Result.FailAsync(string.Format("O nome de usuário '{0}' já existe.", request.UserName), fields);
             }
             var user = new ModulumUser
@@ -99,8 +99,8 @@ Para confirmar sua inscrição clique no link a seguir: <a href=""{url}"">confir
 Se você não solicitou esse registro, pode ignorar este e-mail com segurança. Outra pessoa pode ter digitado seu endereço de e-mail por engano."
                         };
                         var retunText = await _emailService.SendEmail(requestDto);
-                        var fields = new Dictionary<string, object> { { "AtivacaoEmail", url } };
-                        return await Result<string>.SuccessAsync(user.Id, string.Format("Usuário {0} registrado. Por favor, verifique sua caixa de entrada para ativar seu cadastro", user.UserName, fields));
+                        var fields = new Dictionary<string, string> { { "AtivacaoEmail", url } };
+                        return await Result<string>.SuccessAsync(user.Id, fields, string.Format("Usuário {0} registrado. Por favor, verifique sua caixa de entrada para ativar seu cadastro", user.UserName));
                     }
                     return await Result<string>.SuccessAsync(user.Id, string.Format("Usuário {0} registrado.", user.UserName));
                 }
@@ -111,7 +111,7 @@ Se você não solicitou esse registro, pode ignorar este e-mail com segurança. 
             }
             else
             {
-                var fields = new Dictionary<string, object> { { "Email", string.Format("O E-mail {0} já está registrado.", request.Email) } };
+                var fields = new Dictionary<string, string> { { "Email", string.Format("O E-mail {0} já está registrado.", request.Email) } };
                 return await Result.FailAsync(string.Format("O E-mail {0} já está registrado.", request.Email), fields);
             }
         }

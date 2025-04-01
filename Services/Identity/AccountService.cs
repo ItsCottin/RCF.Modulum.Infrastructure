@@ -116,10 +116,10 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByEmailAsync(email);
             if (user == null)
             {
-                var fields = new Dictionary<string, object> { { "Email", "Não existe usuario com E - mail informado" } };
+                var fields = new Dictionary<string, string> { { "Email", "Não existe usuario com E - mail informado" } };
                 return await Result.FailAsync("Não existe usuario com E-mail informado", fields);
             }
-            return user.EmailConfirmed ? await Result.SuccessAsync("E-mail informado está confirmado") : await Result.FailAsync("E-mail informado não está confirmado, Por favor confirme seu e - mail na caixa de entrada.", new Dictionary<string, object> { { "Email", "E-mail informado não está confirmado, Por favor confirme seu e - mail na caixa de entrada." } });
+            return user.EmailConfirmed ? await Result.SuccessAsync("E-mail informado está confirmado") : await Result.FailAsync("E-mail informado não está confirmado, Por favor confirme seu e - mail na caixa de entrada.", new Dictionary<string, string> { { "Email", "E-mail informado não está confirmado, Por favor confirme seu e - mail na caixa de entrada." } });
         }
     }
 }

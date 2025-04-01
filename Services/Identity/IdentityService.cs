@@ -48,7 +48,7 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)
             {
-                var fields = new Dictionary<string, object> { { "Email", "Usuário não encontrado." } };
+                var fields = new Dictionary<string, string> { { "Email", "Usuário não encontrado." } };
                 return await Result<TokenResponse>.FailAsync("Usuario não encontrado.", fields);
             }
             //if (!user.IsActive)
@@ -57,13 +57,13 @@ namespace modulum.Infrastructure.Services.Identity
             //}
             if (!user.EmailConfirmed)
             {
-                var fields = new Dictionary<string, object> { { "Email", "E-Mail não confirmado." } };
+                var fields = new Dictionary<string, string> { { "Email", "E-Mail não confirmado." } };
                 return await Result<TokenResponse>.FailAsync("E-Mail não confirmado.", fields);
             }
             var passwordValid = await _userManager.CheckPasswordAsync(user, model.Password);
             if (!passwordValid)
             {
-                var fields = new Dictionary<string, object> { { "Password", "Senha inválida." } };
+                var fields = new Dictionary<string, string> { { "Password", "Senha inválida." } };
                 return await Result<TokenResponse>.FailAsync("Senha inválida.", fields);
             }
 
@@ -87,7 +87,7 @@ namespace modulum.Infrastructure.Services.Identity
             var user = await _userManager.FindByEmailAsync(userEmail);
             if (user == null)
             {
-                var fields = new Dictionary<string, object> { { "Email", "Usuário não encontrado." } };
+                var fields = new Dictionary<string, string> { { "Email", "Usuário não encontrado." } };
                 return await Result<TokenResponse>.FailAsync("Usuário não encontrado.", fields);
             }
             if (user.RefreshToken != model.RefreshToken || user.RefreshTokenExpiryTime <= DateTime.Now)
