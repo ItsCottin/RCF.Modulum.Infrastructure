@@ -12,15 +12,14 @@ using modulum.Shared.Constants.Application;
 
 namespace Infrastructure.Contexts
 {
-    internal class ModulumContextFactory : IDesignTimeDbContextFactory<ModulumContext>
+    public class ModulumContextFactory : IDesignTimeDbContextFactory<ModulumContext>
     {
         public ModulumContext CreateDbContext(string[] args)
         {
             var optionsBuilder = new DbContextOptionsBuilder<ModulumContext>();
 
             var connectionString = Environment.GetEnvironmentVariable(ApplicationConstants.Variable.ModulumConnectionString);
-            optionsBuilder.UseSqlServer(connectionString,
-                b => b.MigrationsAssembly(typeof(ModulumContext).Assembly.GetName().Name));
+            optionsBuilder.UseSqlServer(connectionString, b => b.MigrationsAssembly("Modulum.Api"));
 
             // Serviços falsos para injeção de dependência em tempo de design
             var currentUserService = new CurrentUserServiceFake();

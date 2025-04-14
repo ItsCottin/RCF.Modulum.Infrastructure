@@ -29,12 +29,12 @@ namespace modulum.Infrastructure.Services.Identity
         private const string InvalidErrorMessage = "E-mail ou senha inválidos.";
 
         private readonly UserManager<ModulumUser> _userManager;
-        private readonly RoleManager<IdentityRole> _roleManager;
+        private readonly RoleManager<ModulumRole> _roleManager;
         private readonly AppConfiguration _appConfig;
         private readonly SignInManager<ModulumUser> _signInManager;
 
         public IdentityService(
-            UserManager<ModulumUser> userManager, RoleManager<IdentityRole> roleManager,
+            UserManager<ModulumUser> userManager, RoleManager<ModulumRole> roleManager,
             IOptions<AppConfiguration> appConfig, SignInManager<ModulumUser> signInManager)
         {
             _userManager = userManager;
@@ -124,7 +124,7 @@ namespace modulum.Infrastructure.Services.Identity
 
             var claims = new List<Claim>
             {
-                new(ClaimTypes.NameIdentifier, user.Id),
+                new(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new(ClaimTypes.Email, user.Email),
                 new(ClaimTypes.Name, user.NomeCompleto)
             }

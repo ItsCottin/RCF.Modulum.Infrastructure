@@ -24,30 +24,41 @@ using Microsoft.Extensions.Localization;
 using modulum.Application.Interfaces.Services.Account;
 using modulum.Shared.Constants.Application;
 using System.Net;
-using modulum.Domain.Entities.MapCoreEntity;
+using modulum.Domain.Entities.DynamicEntity;
+using modulum.Domain.Entities.Account;
+using modulum.Infrastructure.Contexts;
+using modulum.Shared.Models;
+using nodulum.Application.Requests.Identity;
+using static modulum.Shared.Constants.Permission.Permissions;
+using modulum.Application.Requests.Account;
+using modulum.Application.Interfaces.Repositories;
+using RCF.Modulum.Shared.Constants.Email;
 
 namespace modulum.Infrastructure.Services.Identity
 {
     public class UserService : IUserService
     {
+        //private readonly RoleManager<ModulumRole> _roleManager;
         private readonly UserManager<ModulumUser> _userManager;
-        private readonly RoleManager<IdentityRole> _roleManager;
         private readonly IEmailService _emailService;
-        private readonly ICurrentUserService _currentUserService;
         private readonly IMapper _mapper;
+        private readonly ModulumContext _dbContext;
+        private readonly ITwoFactorRepository _twoFactorRepository;
 
         public UserService(
             UserManager<ModulumUser> userManager,
             IMapper mapper,
-            RoleManager<IdentityRole> roleManager,
+            //RoleManager<ModulumRole> roleManager,
             IEmailService emailService,
-            ICurrentUserService currentUserService)
+            ModulumContext dbContext,
+            ITwoFactorRepository twoFactorRepository)
         {
             _userManager = userManager;
             _mapper = mapper;
-            _roleManager = roleManager;
+            //_roleManager = roleManager;
             _emailService = emailService;
-            _currentUserService = currentUserService;
+            _dbContext = dbContext;
+            _twoFactorRepository = twoFactorRepository;
         }
 
         public async Task<Result<List<UserResponse>>> GetAllAsync()
@@ -57,52 +68,16 @@ namespace modulum.Infrastructure.Services.Identity
             return await Result<List<UserResponse>>.SuccessAsync(result);
         }
 
-        public async Task<IResult> RegisterAsync(RegisterRequest request, string origin)
+        public async Task<IResult> FimRegisterAsync(FinishRegisterRequest request, string origin)
         {
-            var userWithSameUserName = await _userManager.FindByNameAsync(request.UserName);
-            if (userWithSameUserName != null)
-            {
-                var fields = new Dictionary<string, string> {{ "UserName", string.Format("O nome de usuário '{0}' já existe.", request.UserName)} };
-                return await Result.FailAsync(string.Format("O nome de usuário '{0}' já existe.", request.UserName), fields);
-            }
-            var user = new ModulumUser
-            {
-                Email = request.Email,
-                NomeCompleto = request.NomeCompleto,
-                UserName = request.UserName,
-                EmailConfirmed = false                
-            };
-
             var userWithSameEmail = await _userManager.FindByEmailAsync(request.Email);
-            if (userWithSameEmail == null)
+            if (userWithSameEmail != null)
             {
-                var result = await _userManager.CreateAsync(user, request.Password);
+                userWithSameEmail.IsCadastroFinalizado = true;
+                var result = await _userManager.AddPasswordAsync(userWithSameEmail, request.Password);
                 if (result.Succeeded)
                 {
-                    await _userManager.AddToRoleAsync(user, RoleConstants.BasicRole);
-                    var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user); //newUser
-                    var validEmailToken = WebUtility.UrlEncode(confirmEmailToken); // Solução dada pelo ChatGPT
-                    //var encodeEmailToken = Encoding.UTF8.GetBytes(confirmEmailToken); // Problema com geração do token grande demais
-                    //var validEmailToken = WebEncoders.Base64UrlEncode(encodeEmailToken);
-                    string url = $"{Environment.GetEnvironmentVariable(ApplicationConstants.Variable.UrlClient)}/confirm-email?userId={user.Id}&token={validEmailToken}"; //newUser
-                    
-                    if (!request.EmailConfirmed)
-                    {
-                        var requestDto = new MailRequest
-                        {
-                            From = "modulumprojeto@gmail.com",
-                            To = user.Email, //newUser
-                            Subject = "Confirme seu E-mail",
-                            Body = $@"Olá, <br /> <br />
-Recebemos sua solicitação de registro para o nosso sistema Modulum. <br /> <br />
-Para confirmar sua inscrição clique no link a seguir: <a href=""{url}"">confirme seu cadastro</a> <br /> <br />
-Se você não solicitou esse registro, pode ignorar este e-mail com segurança. Outra pessoa pode ter digitado seu endereço de e-mail por engano."
-                        };
-                        var retunText = await _emailService.SendEmail(requestDto);
-                        var fields = new Dictionary<string, string> { { "AtivacaoEmail", url } };
-                        return await Result<string>.SuccessAsync(user.Id, fields, string.Format("Usuário {0} registrado. Por favor, verifique sua caixa de entrada para ativar seu cadastro", user.UserName));
-                    }
-                    return await Result<string>.SuccessAsync(user.Id, string.Format("Usuário {0} registrado.", user.UserName));
+                    return await Result<string>.SuccessAsync(userWithSameEmail.Id.ToString(), string.Format("Cadastro do E-mail '{0}' finalizado.", userWithSameEmail.Email));
                 }
                 else
                 {
@@ -111,101 +86,70 @@ Se você não solicitou esse registro, pode ignorar este e-mail com segurança. 
             }
             else
             {
-                var fields = new Dictionary<string, string> { { "Email", string.Format("O E-mail {0} já está registrado.", request.Email) } };
-                return await Result.FailAsync(string.Format("O E-mail {0} já está registrado.", request.Email), fields);
+                return await Result.FailAsync(string.Format("E-mail '{0}' não cadastrado.", userWithSameEmail.Email));
             }
         }
 
-        public async Task<IResult<UserResponse>> GetAsync(string userId)
+        public async Task<IResult> PreRegisterAsync(PreRegisterRequest request, string origin)
+        {
+            var userWithSameEmail = await _userManager.FindByEmailAsync(request.Email);
+            var user = new ModulumUser
+            {
+                Email = request.Email,
+                EmailConfirmed = false,
+                IsCadastroFinalizado = false,
+                UserName = request.Email,
+                NormalizedUserName = request.Email.ToUpperInvariant()
+            };
+            if (userWithSameEmail == null)
+            {
+                var result = await _userManager.CreateAsync(user);
+                if (result.Succeeded)
+                {
+                    var UserRegistrado = await _userManager.FindByEmailAsync(user.Email);
+                    if (UserRegistrado == null)
+                    {
+                        await Result.FailAsync(string.Format("Ocorreu um erro ao cadastrar o E-mail '{0}'", request.Email));
+                    }
+                    var codeTwoFactor = new Random().Next(100000, 1000000).ToString();
+                    TwoFactor twoFactor = new TwoFactor()
+                    {
+                        IdUser = UserRegistrado.Id,
+                        IsUsed = false,
+                        Code = codeTwoFactor
+                    };
+                    await _userManager.AddToRoleAsync(user, RoleConstants.BasicRole);
+                    await _dbContext.TwoFactors.AddAsync(twoFactor);
+                    await _dbContext.SaveChangesAsync();
+                    string url = $"{Environment.GetEnvironmentVariable(ApplicationConstants.Variable.UrlClient)}/{user.Id}"; //newUser
+                    var requestDto = new MailRequest
+                    {
+                        From = "modulumprojeto@gmail.com",
+                        To = user.Email, //newUser
+                        Subject = "Confirme seu E-mail",
+                        Body = await _emailService.SubstituirCodigoNoHtml(codeTwoFactor)
+                    };
+                    var retunText = await _emailService.SendEmail(requestDto);
+                    var fields = new Dictionary<string, string> { { "CodeTwoFactor", codeTwoFactor } };
+                    return await Result<string>.SuccessAsync(user.Id.ToString(), fields, string.Format("E-mail '{0}' registrado. Por favor, verifique sua caixa de entrada para ativar seu cadastro", user.Email));
+                }
+                else
+                {
+                    return await Result.FailAsync(result.Errors.Select(a => a.Description.ToString()).ToList());
+                }
+            }
+            else
+            {
+                var fields = new Dictionary<string, string> { { "Email", string.Format("O E-mail '{0}' já está registrado.", request.Email) } };
+                return await Result.FailAsync(string.Format("O E-mail '{0}' já está registrado.", request.Email), fields);
+            }
+        }
+
+        public async Task<IResult<UserResponse>> GetAsync(int userId)
         {
             var user = await _userManager.Users.Where(u => u.Id == userId).FirstOrDefaultAsync();
             var result = _mapper.Map<UserResponse>(user);
             return await Result<UserResponse>.SuccessAsync(result);
-        }
-
-        //public async Task<IResult> ToggleUserStatusAsync(ToggleUserStatusRequest request)
-        //{
-        //    var user = await _userManager.Users.Where(u => u.Id == request.UserId).FirstOrDefaultAsync();
-        //    var isAdmin = await _userManager.IsInRoleAsync(user, RoleConstants.AdministratorRole);
-        //    if (isAdmin)
-        //    {
-        //        return await Result.FailAsync("Administrators Profile's Status cannot be toggled");
-        //    }
-        //    if (user != null)
-        //    {
-        //        user.IsActive = request.ActivateUser;
-        //        var identityResult = await _userManager.UpdateAsync(user);
-        //    }
-        //    return await Result.SuccessAsync();
-        //}
-
-        public async Task<IResult<UserRolesResponse>> GetRolesAsync(string userId)
-        {
-            var viewModel = new List<UserRoleModel>();
-            var user = await _userManager.FindByIdAsync(userId);
-            var roles = await _roleManager.Roles.ToListAsync();
-
-            foreach (var role in roles)
-            {
-                var userRolesViewModel = new UserRoleModel
-                {
-                    RoleName = role.Name
-                };
-                if (await _userManager.IsInRoleAsync(user, role.Name))
-                {
-                    userRolesViewModel.Selected = true;
-                }
-                else
-                {
-                    userRolesViewModel.Selected = false;
-                }
-                viewModel.Add(userRolesViewModel);
-            }
-            var result = new UserRolesResponse { UserRoles = viewModel };
-            return await Result<UserRolesResponse>.SuccessAsync(result);
-        }
-
-        //public async Task<IResult> UpdateRolesAsync(UpdateUserRolesRequest request)
-        //{
-        //    var user = await _userManager.FindByIdAsync(request.UserId);
-        //    if (user.Email == "mukesh@blazorhero.com")
-        //    {
-        //        return await Result.FailAsync(_localizer["Not Allowed."]);
-        //    }
-        //
-        //    var roles = await _userManager.GetRolesAsync(user);
-        //    var selectedRoles = request.UserRoles.Where(x => x.Selected).ToList();
-        //
-        //    var currentUser = await _userManager.FindByIdAsync(_currentUserService.UserId);
-        //    if (!await _userManager.IsInRoleAsync(currentUser, RoleConstants.AdministratorRole))
-        //    {
-        //        var tryToAddAdministratorRole = selectedRoles
-        //            .Any(x => x.RoleName == RoleConstants.AdministratorRole);
-        //        var userHasAdministratorRole = roles.Any(x => x == RoleConstants.AdministratorRole);
-        //        if (tryToAddAdministratorRole && !userHasAdministratorRole || !tryToAddAdministratorRole && userHasAdministratorRole)
-        //        {
-        //            return await Result.FailAsync(_localizer["Not Allowed to add or delete Administrator Role if you have not this role."]);
-        //        }
-        //    }
-        //
-        //    var result = await _userManager.RemoveFromRolesAsync(user, roles);
-        //    result = await _userManager.AddToRolesAsync(user, selectedRoles.Select(y => y.RoleName));
-        //    return await Result.SuccessAsync(_localizer["Roles Updated"]);
-        //}
-
-        public async Task<IResult<string>> ConfirmEmailAsync(string userId, string code)
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(code));
-            var result = await _userManager.ConfirmEmailAsync(user, code);
-            if (result.Succeeded)
-            {
-                return await Result<string>.SuccessAsync(user.Id, string.Format("Conta {0} confirmada com sucesso.", user.Email));
-            }
-            else
-            {
-                throw new ApiException(string.Format("Ocorreu um erro ao confirmar {0}", user.Email));
-            }
         }
 
         public async Task<IResult> ForgotPasswordAsync(ForgotPasswordRequest request, string origin)
@@ -255,5 +199,128 @@ Se você não solicitou esse registro, pode ignorar este e-mail com segurança. 
             var count = await _userManager.Users.CountAsync();
             return count;
         }
+
+        public async Task<IResult> ConfirmEmailAsync(TwoFactorRequest request)
+        {
+            var user = await _userManager.FindByEmailAsync(request.Email);
+            if (user == null)
+                return await Result.FailAsync("Usuário não encontrado");
+
+            TwoFactor twoFactor = await _twoFactorRepository.GetTwoFactorByUserId(user.Id);
+            if (twoFactor == null)
+                return await Result.FailAsync("Houve um erro, mais não é sua culpa");
+
+            if (twoFactor.IsUsed)
+                return await Result.FailAsync(string.Format("O código '{0}' já foi utilizado", request.Code));
+
+            if (twoFactor.Code != request.Code)
+                return await Result.FailAsync(string.Format("Código '{0}' incorreto", request.Code));
+
+            user.EmailConfirmed = true;
+            twoFactor.IsUsed = true;
+            var resultado = await _userManager.UpdateAsync(user);
+            if (!resultado.Succeeded)
+                return await Result.FailAsync(resultado.Errors.Select(a => a.Description.ToString()).ToList());
+
+            await _twoFactorRepository.UpdateTwoFactor(twoFactor);
+            return await Result.SuccessAsync(string.Format("E-mail '{0}' confirmado com sucesso", request.Email));
+        }
+
+        public async Task<IResult> IsEmailConfirmed(string email)
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            if (user == null)
+            {
+                var fields = new Dictionary<string, string> { { "Email", "Não existe usuario com E - mail informado" } };
+                return await Result.FailAsync("Não existe usuario com E-mail informado", fields);
+            }
+            return user.EmailConfirmed ? await Result.SuccessAsync("E-mail informado está confirmado") : await Result.FailAsync("E-mail informado não está confirmado, Por favor confirme seu e - mail na caixa de entrada.", new Dictionary<string, string> { { "Email", "E-mail informado não está confirmado, Por favor confirme seu e - mail na caixa de entrada." } });
+        }
+
+        public async Task<IResult> ChangePasswordAsync(ChangePasswordRequest model, string userId)
+        {
+            var user = await this._userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                return await Result.FailAsync("Usuário não encontrado.");
+            }
+
+            var identityResult = await this._userManager.ChangePasswordAsync(
+                user,
+                model.Password,
+                model.NewPassword);
+            var errors = identityResult.Errors.Select(e => e.Description.ToString()).ToList();
+            return identityResult.Succeeded ? await Result.SuccessAsync() : await Result.FailAsync(errors);
+        }
+
+        //public async Task<IResult> ToggleUserStatusAsync(ToggleUserStatusRequest request)
+        //{
+        //    var user = await _userManager.Users.Where(u => u.Id == request.UserId).FirstOrDefaultAsync();
+        //    var isAdmin = await _userManager.IsInRoleAsync(user, RoleConstants.AdministratorRole);
+        //    if (isAdmin)
+        //    {
+        //        return await Result.FailAsync("Administrators Profile's Status cannot be toggled");
+        //    }
+        //    if (user != null)
+        //    {
+        //        user.IsActive = request.ActivateUser;
+        //        var identityResult = await _userManager.UpdateAsync(user);
+        //    }
+        //    return await Result.SuccessAsync();
+        //}
+
+        //public async Task<IResult<UserRolesResponse>> GetRolesAsync(string userId)
+        //{
+        //    var viewModel = new List<UserRoleModel>();
+        //    var user = await _userManager.FindByIdAsync(userId);
+        //    var roles = await _roleManager.Roles.ToListAsync();
+        //
+        //    foreach (var role in roles)
+        //    {
+        //        var userRolesViewModel = new UserRoleModel
+        //        {
+        //            RoleName = role.Name
+        //        };
+        //        if (await _userManager.IsInRoleAsync(user, role.Name))
+        //        {
+        //            userRolesViewModel.Selected = true;
+        //        }
+        //        else
+        //        {
+        //            userRolesViewModel.Selected = false;
+        //        }
+        //        viewModel.Add(userRolesViewModel);
+        //    }
+        //    var result = new UserRolesResponse { UserRoles = viewModel };
+        //    return await Result<UserRolesResponse>.SuccessAsync(result);
+        //}
+
+        //public async Task<IResult> UpdateRolesAsync(UpdateUserRolesRequest request)
+        //{
+        //    var user = await _userManager.FindByIdAsync(request.UserId);
+        //    if (user.Email == "mukesh@blazorhero.com")
+        //    {
+        //        return await Result.FailAsync(_localizer["Not Allowed."]);
+        //    }
+        //
+        //    var roles = await _userManager.GetRolesAsync(user);
+        //    var selectedRoles = request.UserRoles.Where(x => x.Selected).ToList();
+        //
+        //    var currentUser = await _userManager.FindByIdAsync(_currentUserService.UserId);
+        //    if (!await _userManager.IsInRoleAsync(currentUser, RoleConstants.AdministratorRole))
+        //    {
+        //        var tryToAddAdministratorRole = selectedRoles
+        //            .Any(x => x.RoleName == RoleConstants.AdministratorRole);
+        //        var userHasAdministratorRole = roles.Any(x => x == RoleConstants.AdministratorRole);
+        //        if (tryToAddAdministratorRole && !userHasAdministratorRole || !tryToAddAdministratorRole && userHasAdministratorRole)
+        //        {
+        //            return await Result.FailAsync(_localizer["Not Allowed to add or delete Administrator Role if you have not this role."]);
+        //        }
+        //    }
+        //
+        //    var result = await _userManager.RemoveFromRolesAsync(user, roles);
+        //    result = await _userManager.AddToRolesAsync(user, selectedRoles.Select(y => y.RoleName));
+        //    return await Result.SuccessAsync(_localizer["Roles Updated"]);
+        //}
     }
 }

@@ -22,17 +22,15 @@ namespace modulum.Infrastructure.Extensions
             services.AddAutoMapper(Assembly.GetExecutingAssembly());
         }
 
-        //public static IServiceCollection AddRepositories(this IServiceCollection services)
-        //{
-        //    return services
-        //        .AddTransient(typeof(IRepositoryAsync<,>), typeof(RepositoryAsync<,>))
-        //        .AddTransient<IProductRepository, ProductRepository>()
-        //        .AddTransient<IBrandRepository, BrandRepository>()
-        //        .AddTransient<IDocumentRepository, DocumentRepository>()
-        //        .AddTransient<IDocumentTypeRepository, DocumentTypeRepository>()
-        //        .AddTransient(typeof(IUnitOfWork<>), typeof(UnitOfWork<>))
-        //        ;
-        //}
+        public static IServiceCollection AddRepositories(this IServiceCollection services)
+        {
+            return services
+                .AddTransient(typeof(IRepositoryAsync<,>), typeof(RepositoryAsync<,>))
+                .AddTransient<ITwoFactorRepository, TwoFactorRepository>()
+                .AddTransient<ITableRepository, TableRepository>()
+                .AddTransient<IFieldRepository, FieldRepository>()
+                .AddTransient(typeof(IUnitOfWork<>), typeof(UnitOfWork<>));
+        }
 
         public static IServiceCollection AddServerStorage(this IServiceCollection services)
             => AddServerStorage(services, null);

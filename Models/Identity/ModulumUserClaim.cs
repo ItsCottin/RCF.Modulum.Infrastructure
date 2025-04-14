@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using modulum.Domain.Contracts;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity;
 
 namespace modulum.Infrastructure.Models.Identity
 {
-    public class ModulumRole : IdentityRole<int>
+    public class ModulumUserClaim : IdentityUserClaim<int>
     {
-        
     }
 }
