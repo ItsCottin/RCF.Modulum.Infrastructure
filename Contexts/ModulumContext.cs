@@ -11,6 +11,7 @@ using System.Reflection.Emit;
 using modulum.Domain.Entities.DynamicEntity;
 using modulum.Domain.Entities.Account;
 using RCF.Modulum.Infrastructure.Models.Identity;
+using modulum.Domain.Entities;
 
 namespace modulum.Infrastructure.Contexts
 {
@@ -43,6 +44,7 @@ namespace modulum.Infrastructure.Contexts
         public DbSet<ModulumRoleClaim> ModulumRoleClaims { get; set; }
         public DbSet<Table> Tables { get; set; }
         public DbSet<Field> Fields { get; set; }
+        public DbSet<NugetPacote> NugetPacotes { get; set; }
 
         public DbSet<TwoFactor> TwoFactors { get; set; }
 
@@ -117,6 +119,11 @@ namespace modulum.Infrastructure.Contexts
             {
                 entity.ToTable("tbl_two_factor", "dbo");
                 entity.HasOne<ModulumUser>().WithMany(u => u.TwoFactors).HasForeignKey(tf => tf.IdUser).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<NugetPacote>(entity =>
+            {
+                entity.ToTable("tbl_versao", "dbo");
             });
         }
     }
