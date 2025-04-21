@@ -36,8 +36,8 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="RCF.Modulum.Application" Version="0.0.2-beta.3" />
-    <PackageReference Include="RCF.Modulum.Shared" Version="0.0.2-beta.2" />
+    <PackageReference Include="RCF.Modulum.Application" Version="0.0.2-beta.7" />
+    <PackageReference Include="RCF.Modulum.Shared" Version="0.0.2-beta.4" />
     <PackageReference Include="SendGrid" Version="9.29.3" />
   </ItemGroup>
 

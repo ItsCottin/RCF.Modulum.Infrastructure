@@ -211,10 +211,16 @@ namespace modulum.Infrastructure.Services.Identity
                 return await Result.FailAsync("Houve um erro, mais não é sua culpa");
 
             if (twoFactor.IsUsed)
-                return await Result.FailAsync(string.Format("O código '{0}' já foi utilizado", request.Code));
+            {
+                var fields = new Dictionary<string, string> { { "Code", string.Format("O código '{0}' já foi utilizado", request.Code) } };
+                return await Result.FailAsync(string.Format("O código '{0}' já foi utilizado", request.Code), fields);
+            }
 
             if (twoFactor.Code != request.Code)
-                return await Result.FailAsync(string.Format("Código '{0}' incorreto", request.Code));
+            {
+                var fields = new Dictionary<string, string> { { "Code", string.Format("Código '{0}' incorreto", request.Code) } };
+                return await Result.FailAsync(string.Format("Código '{0}' incorreto", request.Code), fields);
+            }
 
             user.EmailConfirmed = true;
             twoFactor.IsUsed = true;

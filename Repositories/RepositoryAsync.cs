@@ -61,5 +61,10 @@ namespace modulum.Infrastructure.Repositories
             //_dbContext.Entry(exist).CurrentValues.SetValues(entity);
             return Task.CompletedTask;
         }
+
+        public async Task SaveChangesAsync()
+        {
+            await _dbContext.SaveChangesAsync();
+        }
     }
 }

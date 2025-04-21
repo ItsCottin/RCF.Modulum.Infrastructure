@@ -1,5 +1,7 @@
 ﻿using AutoMapper;
 using Microsoft.EntityFrameworkCore;
+using modulum.Application.Interfaces.Repositories;
+using modulum.Application.Requests.Versao;
 using modulum.Application.Responses.Versao;
 using modulum.Infrastructure.Contexts;
 using modulum.Shared.Wrapper;
@@ -16,15 +18,18 @@ namespace RCF.Modulum.Infrastructure.Services.Versao
     {
         private readonly ModulumContext _context;
         private readonly IMapper _mapper;
+        private readonly IVersaoRepository _versaoRepository;
 
         public VersaoService
             (
             ModulumContext context,
-            IMapper mapper
+            IMapper mapper,
+            IVersaoRepository versaoRepository
             )
         { 
             _context = context;
             _mapper = mapper;
+            _versaoRepository = versaoRepository;
         }
 
         public async Task<IResult<List<VersaoResponse>>> GetAllVersao()
@@ -34,7 +39,12 @@ namespace RCF.Modulum.Infrastructure.Services.Versao
             if (!resultado.Any())
                 return await Result<List<VersaoResponse>>.SuccessAsync(new List<VersaoResponse>(), "Nenhum pacote foi encontrado.");
 
-            return await Result<List<VersaoResponse>>.SuccessAsync("Lista de pacotes e versões");
+            return await Result<List<VersaoResponse>>.SuccessAsync(response, "Lista de pacotes e versões");
+        }
+
+        public async Task<bool> AddEditPacotes(PackageListResultRequest request)
+        {
+            return await _versaoRepository.Update(request);
         }
     }
 }

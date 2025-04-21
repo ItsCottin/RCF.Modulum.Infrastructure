@@ -125,8 +125,8 @@ namespace modulum.Infrastructure.Services.Identity
             var claims = new List<Claim>
             {
                 new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new(ClaimTypes.Email, user.Email),
-                new(ClaimTypes.Name, user.NomeCompleto)
+                new(ClaimTypes.Email, user.Email)
+                //new(ClaimTypes.Name, user.NomeCompleto) // Ponto onde esta dando erro para usuarios novos pois usuarios novos esta com NomeCompleto null na base
             }
             .Union(userClaims)
             .Union(roleClaims);

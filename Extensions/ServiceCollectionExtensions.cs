@@ -29,6 +29,7 @@ namespace modulum.Infrastructure.Extensions
                 .AddTransient<ITwoFactorRepository, TwoFactorRepository>()
                 .AddTransient<ITableRepository, TableRepository>()
                 .AddTransient<IFieldRepository, FieldRepository>()
+                .AddTransient<IVersaoRepository, VersaoRepository>()
                 .AddTransient(typeof(IUnitOfWork<>), typeof(UnitOfWork<>));
         }
 

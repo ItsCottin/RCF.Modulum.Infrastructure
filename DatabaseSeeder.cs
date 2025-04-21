@@ -37,6 +37,8 @@ namespace modulum.Infrastructure
             _db.SaveChanges();
             AddBasicUser();
             _db.SaveChanges();
+            AddSistemaUser();
+            _db.SaveChanges();
         }
     
         private void AddAdministrator()
@@ -98,6 +100,37 @@ namespace modulum.Infrastructure
                 {
                     await _userManager.CreateAsync(basicUser, UserConstants.DefaultPassword);
                     await _userManager.AddToRoleAsync(basicUser, RoleConstants.BasicRole);
+                }
+            }).GetAwaiter().GetResult();
+        }
+
+        private void AddSistemaUser()
+        {
+            Task.Run(async () =>
+            {
+                //Check if Role Exists
+                var sistemaRole = new ModulumRole { Name = RoleConstants.SistemaRole, NormalizedName = RoleConstants.SistemaRole.ToUpper() };
+                var sistemaRoleInDb = await _roleManager.FindByNameAsync(RoleConstants.SistemaRole);
+                if (sistemaRoleInDb == null)
+                {
+                    await _roleManager.CreateAsync(sistemaRole);
+                }
+                //Check if User Exists
+                var sistemaUser = new ModulumUser
+                {
+                    NomeCompleto = "Sistema",
+                    Email = "sistema@sistema.com",
+                    UserName = "sistema@sistema.com",
+                    NormalizedEmail = "sistema@sistema.com".ToUpper(),
+                    NormalizedUserName = "sistema@sistema.com".ToUpper(),
+                    EmailConfirmed = true,
+                    IsCadastroFinalizado = true,
+                };
+                var sistemaUserInDb = await _userManager.FindByEmailAsync(sistemaUser.Email);
+                if (sistemaUserInDb == null)
+                {
+                    await _userManager.CreateAsync(sistemaUser, UserConstants.DefaultPassword);
+                    await _userManager.AddToRoleAsync(sistemaUser, RoleConstants.SistemaRole);
                 }
             }).GetAwaiter().GetResult();
         }
