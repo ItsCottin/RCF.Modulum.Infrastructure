@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using modulum.Application.Requests.Dynamic;
 using modulum.Application.Requests.Dynamic.Create;
 using modulum.Application.Responses.Identity;
 using modulum.Domain.Entities.DynamicEntity;
@@ -21,6 +22,7 @@ namespace modulum.Infrastructure.Mappings
             .ForMember(dest => dest.Fields, opt => opt.MapFrom(src => src.Campos))
             .ReverseMap()
             .ForMember(dest => dest.Campos, opt => opt.MapFrom(src => src.Fields));
+            CreateMap<Table, MenuRequest>();
         }
     }
 }

@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 using modulum.Shared.Wrapper;
 using modulum.Application.Requests.Dynamic;
+using AutoMapper;
 
 namespace modulum.Infrastructure.Services.DynamicEntity
 {
@@ -16,8 +17,15 @@ namespace modulum.Infrastructure.Services.DynamicEntity
     {
         private readonly ModulumContext _context;
 
-        public DynamicTableService(ModulumContext context)
+        private readonly IMapper _mapper;
+
+        public DynamicTableService
+            (
+            IMapper mapper,
+            ModulumContext context
+            )
         {
+            _mapper = mapper;
             _context = context;
         }
 
@@ -110,7 +118,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 await _context.Database.ExecuteSqlRawAsync(sql);
             }
 
-            return await Result.SuccessAsync("Registro alterado com sucesso"); ;
+            return await Result.SuccessAsync("Registro alterado com sucesso");
         }
         
         public async Task<IResult> DeleteAsync(DynamicTableRequest request)
@@ -210,6 +218,13 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             };
 
             return await Result<DynamicTableRequest>.SuccessAsync(response);
+        }
+
+        public async Task<IResult<List<MenuRequest>>> GetMenu()
+        {
+            var tables = await _context.Tables.ToListAsync();
+            var menuRequests = _mapper.Map<List<MenuRequest>>(tables);
+            return await Result<List<MenuRequest>>.SuccessAsync(menuRequests);
         }
     }
 }
