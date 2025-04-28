@@ -253,6 +253,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
             DynamicTableRequest retorno = new DynamicTableRequest()
             {
+                Id = table.Id,
                 NomeTabela = table.NomeTabela,
                 NomeTela = table.NomeTela,
                 Resultados = new List<DynamicDadoRequest>() 
@@ -281,7 +282,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                         IsPrimaryKey = campo.IsPrimaryKey,
                         IsObrigatorio = campo.IsObrigatorio,
                         Id = campo.Id,
-                        IdTabela = campo.TableId,
+                        IdTabela = table.Id,
                         Valor = string.Empty
                     });
                 }
