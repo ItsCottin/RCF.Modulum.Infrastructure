@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
 using modulum.Domain.Entities.Account;
+using modulum.Domain.Entities.DynamicEntity;
 
 namespace modulum.Infrastructure.Models.Identity
 {
@@ -16,6 +17,8 @@ namespace modulum.Infrastructure.Models.Identity
         public bool? IsCadastroFinalizado { get; set; }
 
         public List<TwoFactor> TwoFactors { get; set; } = new();
+
+        public List<Table> Tables { get; set; } = new();
 
         public ModulumUser()
         {

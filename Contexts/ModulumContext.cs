@@ -107,6 +107,7 @@ namespace modulum.Infrastructure.Contexts
             {
                 entity.HasMany(t => t.Fields).WithOne(f => f.Table).HasForeignKey(f => f.TableId);
                 entity.ToTable("tbl_table", "dbo");
+                entity.HasOne<ModulumUser>().WithMany(u => u.Tables).HasForeignKey(tf => tf.IdUsuario).OnDelete(DeleteBehavior.Cascade);
             });
 
             builder.Entity<Field>(entity =>

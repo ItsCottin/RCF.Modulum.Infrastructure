@@ -10,23 +10,28 @@ using System.Threading.Tasks;
 using modulum.Shared.Wrapper;
 using modulum.Application.Requests.Dynamic;
 using AutoMapper;
+using System.Reflection.PortableExecutable;
+using static OfficeOpenXml.ExcelErrorValue;
+using modulum.Application.Interfaces.Services;
 
 namespace modulum.Infrastructure.Services.DynamicEntity
 {
     public class DynamicTableService : IDynamicTableService
     {
         private readonly ModulumContext _context;
-
         private readonly IMapper _mapper;
+        private readonly ICurrentUserService _currentUserService;
 
         public DynamicTableService
             (
             IMapper mapper,
-            ModulumContext context
+            ModulumContext context,
+            ICurrentUserService currentUserService
             )
         {
             _mapper = mapper;
             _context = context;
+            _currentUserService = currentUserService;
         }
 
         public async Task<IResult> CriarTabelaFisicaAsync(Table table)
@@ -62,15 +67,20 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             }
             catch (Exception ex)
             {
+                _context.Fields.RemoveRange(table.Fields);
+                _context.Tables.Remove(table);
+                await _context.SaveChangesAsync();
                 return await Result.FailAsync(ex.Message);
             }
         }
 
         public async Task<IResult> InsertAsync(DynamicTableRequest request)
         {
-            var table = await _context.Tables.Include(t => t.Fields).FirstOrDefaultAsync(t => t.Id == request.Id);
+            // Implementar futuramente aqui as permissoes de acesso dada do usuario criador da tabela a outros usuarios registrados
+            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.Id);
 
-            if (table == null) throw new Exception("Tabela não encontrada.");
+            if (table == null)
+                return await Result.FailAsync("Tabela não encontrada.");
 
             foreach (var registro in request.Resultados)
             {
@@ -94,9 +104,11 @@ namespace modulum.Infrastructure.Services.DynamicEntity
         
         public async Task<IResult> UpdateAsync(DynamicTableRequest request)
         {
-            var table = await _context.Tables.Include(t => t.Fields).FirstOrDefaultAsync(t => t.Id == request.Id);
+            // Implementar futuramente aqui as permissoes de acesso dada do usuario criador da tabela a outros usuarios registrados
+            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.Id);
 
-            if (table == null) throw new Exception("Tabela não encontrada.");
+            if (table == null)
+                return await Result.FailAsync("Tabela não encontrada.");
 
             foreach (var registro in request.Resultados)
             {
@@ -123,14 +135,17 @@ namespace modulum.Infrastructure.Services.DynamicEntity
         
         public async Task<IResult> DeleteAsync(DynamicTableRequest request)
         {
-            var table = await _context.Tables.Include(t => t.Fields).FirstOrDefaultAsync(t => t.Id == request.Id);
+            // Implementar futuramente aqui as permissoes de acesso dada do usuario criador da tabela a outros usuarios registrados
+            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.Id);
 
-            if (table == null) throw new Exception("Tabela não encontrada.");
+            if (table == null) 
+                return await Result.FailAsync("Tabela não encontrada.");
 
             foreach (var registro in request.Resultados)
             {
                 var pkField = registro.Valores.FirstOrDefault(f => f.IsPrimaryKey);
-                if (pkField == null) throw new Exception("Campo chave primária não encontrado.");
+                if (pkField == null)
+                    return await Result.FailAsync("Campo chave primária não encontrado.");
 
                 var pkValue = FormatSqlValue(pkField.Tipo.ToString(), pkField.Valor);
 
@@ -148,18 +163,18 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 "varchar" or "string" => $"'{valor}'",
                 "date" => $"'{Convert.ToDateTime(valor):yyyy-MM-dd HH:mm:ss}'",
                 "int" or "integer" => valor.ToString(),
-                "bigint" or "long" => valor.ToString(),
+                "bit" or "boolean" => (Convert.ToBoolean(valor) ? "1" : "0"),
                 _ => $"'{valor}'"
             };
         }
 
         public async Task<IResult<DynamicTableRequest>> ConsultarDinamicoAsync(int idTabela)
         {
-            var table = await _context.Tables
-                .Include(t => t.Fields)
-                .FirstOrDefaultAsync(t => t.Id == idTabela);
+            // Implementar futuramente aqui as permissoes de acesso dada do usuario criador da tabela a outros usuarios registrados
+            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == idTabela);
 
-            if (table == null) throw new Exception("Tabela não encontrada.");
+            if (table == null)
+                return await Result<DynamicTableRequest>.FailAsync("Tabela não encontrada.");
 
             var campos = table.Fields;
 
@@ -222,9 +237,56 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
         public async Task<IResult<List<MenuRequest>>> GetMenu()
         {
-            var tables = await _context.Tables.ToListAsync();
+            var tables = await _context.Tables.Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).ToListAsync();
             var menuRequests = _mapper.Map<List<MenuRequest>>(tables);
             return await Result<List<MenuRequest>>.SuccessAsync(menuRequests);
+        }
+
+        public async Task<IResult<DynamicTableRequest>> GetNewObjetoDinamico(int idTabela)
+        {
+            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == idTabela);
+
+            if (table == null)
+                return await Result<DynamicTableRequest>.FailAsync("Tabela não encontrada.");
+
+            var campos = table.Fields;
+
+            DynamicTableRequest retorno = new DynamicTableRequest()
+            {
+                NomeTabela = table.NomeTabela,
+                NomeTela = table.NomeTela,
+                Resultados = new List<DynamicDadoRequest>() 
+                {
+                    new DynamicDadoRequest()
+                    {
+                        Id = 0,
+                        Valores = new List<DynamicFieldRequest>()
+                    }
+                }
+            };
+
+            foreach (var resultado in retorno.Resultados)
+            { 
+                foreach (var campo in campos)
+                {
+                    if (campo.IsPrimaryKey)
+                        retorno.CampoPK = campo.NomeCampoBase;
+
+                    resultado.Valores.Add(new DynamicFieldRequest
+                    {
+                        NomeCampoBase = campo.NomeCampoBase,
+                        NomeCampoTela = campo.NomeCampoTela,
+                        Tipo = campo.Tipo,
+                        Tamanho = campo.Tamanho,
+                        IsPrimaryKey = campo.IsPrimaryKey,
+                        IsObrigatorio = campo.IsObrigatorio,
+                        Id = campo.Id,
+                        IdTabela = campo.TableId,
+                        Valor = string.Empty
+                    });
+                }
+            }
+            return await Result<DynamicTableRequest>.SuccessAsync(retorno);
         }
     }
 }
