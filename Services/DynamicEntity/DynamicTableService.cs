@@ -170,7 +170,6 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
         public async Task<IResult<DynamicTableRequest>> ConsultarDinamicoAsync(int idTabela)
         {
-            // Implementar futuramente aqui as permissoes de acesso dada do usuario criador da tabela a outros usuarios registrados
             var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == idTabela);
 
             if (table == null)
@@ -188,6 +187,8 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
             using var command = connection.CreateCommand();
             command.CommandText = sql;
+
+            int idregistro;
 
             using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
@@ -212,9 +213,12 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                     });
                 }
 
+                var pkValue = reader[table.CampoPK]?.ToString();
+                var idRegistro = int.TryParse(pkValue, out var idParsed) ? idParsed : 0;
+
                 var registro = new DynamicDadoRequest
                 {
-                    Id = 0, // Resgatar o Id do registro aqui 
+                    Id = idRegistro, // Chat, Preencher aqui o valor do Id do registro definido no campo "CampoPK", lembrando que o id sempre sera int
                     Valores = valores
                 };
 
