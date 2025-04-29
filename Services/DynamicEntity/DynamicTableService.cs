@@ -163,7 +163,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 "varchar" or "string" => $"'{valor}'",
                 "date" => $"'{Convert.ToDateTime(valor):yyyy-MM-dd HH:mm:ss}'",
                 "int" or "integer" => valor.ToString(),
-                "bit" or "boolean" => (Convert.ToBoolean(valor) ? "1" : "0"),
+                "bit" or "boolean" => valor.ToString(),
                 _ => $"'{valor}'"
             };
         }
