@@ -13,6 +13,7 @@ using AutoMapper;
 using System.Reflection.PortableExecutable;
 using static OfficeOpenXml.ExcelErrorValue;
 using modulum.Application.Interfaces.Services;
+using modulum.Shared.Enum;
 
 namespace modulum.Infrastructure.Services.DynamicEntity
 {
@@ -198,7 +199,10 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 foreach (var campo in campos)
                 {
                     var valorLido = reader[campo.NomeCampoBase]?.ToString();
-
+                    if (campo.Tipo == TypeColumnEnum.BIT)
+                    {
+                        valorLido = valorLido.Equals("True") ? "1" : "0"; // Fix consulta quando o dado em base é um bit
+                    }
                     valores.Add(new DynamicFieldRequest
                     {
                         NomeCampoBase = campo.NomeCampoBase,
