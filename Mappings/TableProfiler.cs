@@ -1,6 +1,9 @@
 ﻿using AutoMapper;
 using modulum.Application.Requests.Dynamic;
 using modulum.Application.Requests.Dynamic.Create;
+using modulum.Application.Requests.Dynamic.Relationship;
+using modulum.Application.Requests.Dynamic.Update;
+using modulum.Application.Responses.Dynamic;
 using modulum.Application.Responses.Identity;
 using modulum.Domain.Entities.DynamicEntity;
 using modulum.Domain.Enums;
@@ -18,11 +21,23 @@ namespace modulum.Infrastructure.Mappings
         public TableProfiler() 
         {
             CreateMap<CreateDynamicFieldRequest, Field>().ReverseMap();
+
+            CreateMap<UpdateDynamicFieldRequest, Field>().ReverseMap();
+
             CreateMap<CreateDynamicTableRequest, Table>()
             .ForMember(dest => dest.Fields, opt => opt.MapFrom(src => src.Campos))
             .ReverseMap()
             .ForMember(dest => dest.Campos, opt => opt.MapFrom(src => src.Fields));
+
             CreateMap<Table, MenuRequest>();
+
+            CreateMap<CreateDynamicRelationshipRequest, Relationship>().ReverseMap();
+
+            CreateMap<GetDynamicMapTableResponse, Table>()
+            .ForMember(dest => dest.Fields, opt => opt.MapFrom(src => src.Campos))
+            .ReverseMap()
+            .ForMember(dest => dest.Campos, opt => opt.MapFrom(src => src.Fields));
+
         }
     }
 }

@@ -14,6 +14,8 @@ using System.Reflection.PortableExecutable;
 using static OfficeOpenXml.ExcelErrorValue;
 using modulum.Application.Interfaces.Services;
 using modulum.Shared.Enum;
+using Azure.Core;
+using Newtonsoft.Json.Linq;
 
 namespace modulum.Infrastructure.Services.DynamicEntity
 {
@@ -35,58 +37,106 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             _currentUserService = currentUserService;
         }
 
-        public async Task<IResult> CriarTabelaFisicaAsync(Table table)
-        {
-            try
-            {
-                //var table = await _context.Tables.Include(t => t.Fields).FirstOrDefaultAsync(t => t.Id == tableId);
-
-                if (table == null)
-                    return await Result.FailAsync("Tabela não encontrada.");
-
-                //string tableName = table.NomeTabela.Replace(" ", "_");
-
-                var columns = table.Fields.Select(f =>
-                {
-                    string column = $"{f.NomeCampoBase} {f.Tipo}";
-
-                    if (f.Tamanho.HasValue && (f.Tipo.ToString().Equals("VARCHAR", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        column += $"({f.Tamanho})";
-                    }
-
-                    if (f.IsPrimaryKey) // Adicionar validação para caso IsPrimaryKey = true vier em mais de um campo
-                        column += " PRIMARY KEY";
-
-                    return column;
-                });
-
-                string createTableQuery = $"CREATE TABLE {table.NomeTabela} ({string.Join(", ", columns)});";
-
-                await _context.Database.ExecuteSqlRawAsync(createTableQuery);
-                return Result.Success("Tabela criada com sucesso");
-            }
-            catch (Exception ex)
-            {
-                _context.Fields.RemoveRange(table.Fields);
-                _context.Tables.Remove(table);
-                await _context.SaveChangesAsync();
-                return await Result.FailAsync(ex.Message);
-            }
-        }
+        //public async Task<IResult> CriarTabelaFisicaAsync(Table table)
+        //{
+        //    try
+        //    {
+        //        //var table = await _context.Tables.Include(t => t.Fields).FirstOrDefaultAsync(t => t.Id == tableId);
+        //
+        //        if (table == null)
+        //            return await Result.FailAsync("Tabela não encontrada.");
+        //
+        //        //string tableName = table.NomeTabela.Replace(" ", "_");
+        //
+        //        var columns = table.Fields.Select(f =>
+        //        {
+        //            string column = $"{f.NomeCampoBase} {f.Tipo}";
+        //
+        //            if (f.Tamanho.HasValue && (f.Tipo.ToString().Equals("VARCHAR", StringComparison.OrdinalIgnoreCase)))
+        //            {
+        //                column += $"({f.Tamanho})";
+        //            }
+        //
+        //            if (f.IsPrimaryKey) // Adicionar validação para caso IsPrimaryKey = true vier em mais de um campo
+        //                column += " PRIMARY KEY IDENTITY";
+        //
+        //            return column;
+        //        });
+        //
+        //        string createTableQuery = $"CREATE TABLE {table.NomeTabela} ({string.Join(", ", columns)});";
+        //
+        //        await _context.Database.ExecuteSqlRawAsync(createTableQuery);
+        //        return Result.Success("Tabela criada com sucesso");
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _context.Fields.RemoveRange(table.Fields);
+        //        _context.Tables.Remove(table);
+        //        await _context.SaveChangesAsync();
+        //        return await Result.FailAsync(ex.Message);
+        //    }
+        //}
 
         public async Task<IResult> InsertAsync(DynamicTableRequest request)
         {
             // Implementar futuramente aqui as permissoes de acesso dada do usuario criador da tabela a outros usuarios registrados
-            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.Id);
+            // Codigo antigo, apenas comentado caso o novo codigo nao funcionar
+            //var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.Id);
+            //
+            //if (table == null)
+            //    return await Result.FailAsync("Tabela não encontrada.");
+            //
+            //foreach (var registro in request.Resultados)
+            //{
+            //    var columns = new List<string>();
+            //    var values = new List<string>();
+            //
+            //    foreach (var field in registro.Valores)
+            //    {
+            //        var columnName = field.NomeCampoBase;
+            //        var valor = FormatSqlValue(field.Tipo.ToString(), field.Valor);
+            //        columns.Add(columnName);
+            //        values.Add(valor);
+            //    }
+            //
+            //    var sql = $"INSERT INTO {table.NomeTabela} ({string.Join(",", columns)}) VALUES ({string.Join(",", values)});";
+            //    await _context.Database.ExecuteSqlRawAsync(sql);
+            //}
+            //
+            //return await Result.SuccessAsync("Registro incluído com sucesso"); ;
+
+            var table = await _context.Tables.Include(t => t.Fields).FirstOrDefaultAsync(t => t.Id == request.Id && t.IdUsuario == int.Parse(_currentUserService.UserId));
 
             if (table == null)
-                return await Result.FailAsync("Tabela não encontrada.");
+                return await Result.FailAsync($"Tela '{request.NomeTela}' não encontrada");
+
+            var nomeTabela = table.NomeTabela;
+            var nomeCampoPk = table.Fields.FirstOrDefault(f => f.IsPrimaryKey)?.NomeCampoBase;
+
+            if (string.IsNullOrWhiteSpace(nomeCampoPk))
+                return await Result.FailAsync("Chave primária não definida para a tabela.");
+
+            using var connection = _context.Database.GetDbConnection();
+            await connection.OpenAsync();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = $@"SELECT COLUMNPROPERTY(OBJECT_ID('{nomeTabela}'), '{nomeCampoPk}','IsIdentity')";
+
+            var result = await command.ExecuteScalarAsync();
+            int isIdentity = Convert.ToInt32(result);
 
             foreach (var registro in request.Resultados)
             {
                 var columns = new List<string>();
                 var values = new List<string>();
+
+                if (isIdentity == 0)
+                {
+                    var maxIdQuery = $"SELECT ISNULL(MAX([{nomeCampoPk}]), 0) + 1 FROM {nomeTabela}";
+                    var nextId = await _context.Database.ExecuteScalarAsync<int>(maxIdQuery);
+                    columns.Add(nomeCampoPk);
+                    values.Add(nextId.ToString());
+                }
 
                 foreach (var field in registro.Valores)
                 {
@@ -96,11 +146,11 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                     values.Add(valor);
                 }
 
-                var sql = $"INSERT INTO {table.NomeTabela} ({string.Join(",", columns)}) VALUES ({string.Join(",", values)});";
+                var sql = $"INSERT INTO {nomeTabela} ({string.Join(",", columns)}) VALUES ({string.Join(",", values)});";
                 await _context.Database.ExecuteSqlRawAsync(sql);
             }
 
-            return await Result.SuccessAsync("Registro incluído com sucesso"); ;
+            return await Result.SuccessAsync("Registro incluído com sucesso");
         }
         
         public async Task<IResult> UpdateAsync(DynamicTableRequest request)
@@ -109,7 +159,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.Id);
 
             if (table == null)
-                return await Result.FailAsync("Tabela não encontrada.");
+                return await Result.FailAsync($"Tela '{request.NomeTela}' não encontrada");
 
             foreach (var registro in request.Resultados)
             {
@@ -133,26 +183,38 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
             return await Result.SuccessAsync("Registro alterado com sucesso");
         }
-        
-        public async Task<IResult> DeleteAsync(DynamicTableRequest request)
+
+        public async Task<IResult> DeletePorIdAsync(DynamicForIdRequest request)
         {
-            // Implementar futuramente aqui as permissoes de acesso dada do usuario criador da tabela a outros usuarios registrados
-            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.Id);
+            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.IdTable);
 
-            if (table == null) 
-                return await Result.FailAsync("Tabela não encontrada.");
+            if (table == null)
+                return await Result.FailAsync("Tela não encontrada.");
 
-            foreach (var registro in request.Resultados)
+            var relacionamentos = await _context.Relationships.Where(t => t.TabelaOrigemId == table.Id).ToArrayAsync();
+
+            foreach (var r in relacionamentos)
             {
-                var pkField = registro.Valores.FirstOrDefault(f => f.IsPrimaryKey);
-                if (pkField == null)
-                    return await Result.FailAsync("Campo chave primária não encontrado.");
+                var select = $"SELECT COUNT(1) FROM {r.TabelaDestino.NomeTabela} WHERE {r.CampoDestino} = {request.IdRegistro};";
 
-                var pkValue = FormatSqlValue(pkField.Tipo.ToString(), pkField.Valor);
+                // Executa a consulta e verifica se existem registros
+                using var connection = _context.Database.GetDbConnection();
+                await connection.OpenAsync();
 
-                var sql = $"DELETE FROM {table.NomeTabela} WHERE {pkField.NomeCampoBase} = {pkValue};";
-                await _context.Database.ExecuteSqlRawAsync(sql);
+                using var command = connection.CreateCommand();
+                command.CommandText = select;
+
+                var result = await command.ExecuteScalarAsync();
+                int count = Convert.ToInt32(result);
+
+                if (count > 0)
+                {
+                    return await Result.FailAsync($"Existem registros na tabela '{r.TabelaDestino.NomeTabela}' que referenciam o registro com o registro que voce esta tentando excluir '{request.IdRegistro}'.");
+                }
             }
+
+            var sql = $"DELETE FROM {table.NomeTabela} WHERE {table.CampoPK} = {request.IdRegistro};";
+            await _context.Database.ExecuteSqlRawAsync(sql);
 
             return await Result.SuccessAsync("Registro deletado com sucesso");
         }
@@ -169,12 +231,12 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             };
         }
 
-        public async Task<IResult<DynamicTableRequest>> ConsultarDinamicoAsync(int idTabela)
+        public async Task<IResult<DynamicTableRequest>> ConsultaTodosPorIdTabelaAsync(int idTabela)
         {
             var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == idTabela);
 
             if (table == null)
-                return await Result<DynamicTableRequest>.FailAsync("Tabela não encontrada.");
+                return await Result<DynamicTableRequest>.FailAsync("Tela não encontrada.");
 
             var campos = table.Fields;
 
@@ -203,18 +265,50 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                     {
                         valorLido = valorLido.Equals("True") ? "1" : "0"; // Fix consulta quando o dado em base é um bit
                     }
-                    valores.Add(new DynamicFieldRequest
+
+                // Preenche as opções se o campo for uma chave estrangeira
+                var opcoes = new List<DynamicOpcaoRequest?>();
+                if (campo.IsForeigeKey)
+                {
+                    var relacionamento = table.RelacionamentosComoOrigem
+                        .FirstOrDefault(r => r.CampoOrigem == campo.NomeCampoBase);
+
+                    if (relacionamento != null)
+                    {
+                        var sqlOpcoes = $"SELECT {relacionamento.TabelaDestino.CampoPK}, {relacionamento.CampoParaExibicaoRelacionamento} FROM {relacionamento.TabelaDestino.NomeTabela};";
+
+                        using var connectionOpcoes = _context.Database.GetDbConnection();
+                        await connectionOpcoes.OpenAsync();
+
+                        using var commandOpcoes = connectionOpcoes.CreateCommand();
+                        commandOpcoes.CommandText = sqlOpcoes;
+
+                        using var readerOpcoes = await commandOpcoes.ExecuteReaderAsync();
+                        while (await readerOpcoes.ReadAsync())
+                        {
+                            opcoes.Add(new DynamicOpcaoRequest
+                            {
+                                IdRegistro = Convert.ToInt32(readerOpcoes[relacionamento.TabelaDestino.CampoPK]),
+                                ValorExibicao = readerOpcoes[relacionamento.CampoParaExibicaoRelacionamento]?.ToString()
+                            });
+                        }
+                    }
+                }
+
+                valores.Add(new DynamicFieldRequest
                     {
                         NomeCampoBase = campo.NomeCampoBase,
                         NomeCampoTela = campo.NomeCampoTela,
                         Tipo = campo.Tipo,
                         Tamanho = campo.Tamanho,
                         IsPrimaryKey = campo.IsPrimaryKey,
+                        IsForeigeKey = campo.IsForeigeKey,
                         IsObrigatorio = campo.IsObrigatorio,
                         Id = campo.Id,
                         IdTabela = campo.TableId,
-                        Valor = valorLido
-                    });
+                        Valor = valorLido,
+                        Opcoes = opcoes
+                });
                 }
 
                 var pkValue = reader[table.CampoPK]?.ToString();
@@ -234,13 +328,123 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 NomeTabela = table.NomeTabela,
                 NomeTela = table.NomeTela,
                 CampoPK = table.CampoPK,
-                JsonObject = table.JsonObject,
-                TelaObject = table.TelaObject,
                 Id = table.Id,
                 Resultados = registros
             };
 
             return await Result<DynamicTableRequest>.SuccessAsync(response);
+        }
+
+        public async Task<IResult<DynamicTableRequest>> ConsultaRegistroPorIdTabelaEIdRegistroAsync(DynamicForIdRequest request)
+        {
+            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.IdTable);
+
+            if (table == null)
+                return await Result<DynamicTableRequest>.FailAsync("Tela não encontrada.");
+
+            var campos = table.Fields;
+
+            var colunas = campos.Select(c => c.NomeCampoBase).ToList();
+            var sql = $"SELECT {string.Join(",", colunas)} FROM {table.NomeTabela} WHERE {table.CampoPK} = {request.IdRegistro};";
+
+            var registros = new List<DynamicDadoRequest>();
+
+            using var connection = _context.Database.GetDbConnection();
+            await connection.OpenAsync();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+
+            using var reader = await command.ExecuteReaderAsync();
+            bool IsExisteRegistro = false;
+            while (await reader.ReadAsync())
+            {
+                var pkValue = reader[table.CampoPK]?.ToString();
+                int idConsultado = int.TryParse(pkValue, out var idParsed) ? idParsed : 0;
+
+                if (idConsultado == request.IdRegistro)
+                {
+                    IsExisteRegistro = true;
+                    var valores = new List<DynamicFieldRequest>();
+
+                    foreach (var campo in campos)
+                    {
+                        var valorLido = reader[campo.NomeCampoBase]?.ToString();
+                        if (campo.Tipo == TypeColumnEnum.BIT)
+                        {
+                            valorLido = valorLido.Equals("True") ? "1" : "0"; // Fix consulta quando o dado em base é um bit
+                        }
+
+                        var opcoes = new List<DynamicOpcaoRequest?>();
+                        if (campo.IsForeigeKey)
+                        {
+                            var relacionamento = table.RelacionamentosComoOrigem.FirstOrDefault(r => r.CampoOrigem == campo.NomeCampoBase);
+
+                            if (relacionamento != null)
+                            {
+                                // Monta a consulta para buscar os valores da tabela relacionada
+                                var sqlOpcoes = $@"
+                                    SELECT {relacionamento.TabelaDestino.CampoPK}, 
+                                    {relacionamento.CampoParaExibicaoRelacionamento} 
+                                    FROM {relacionamento.TabelaDestino.NomeTabela};";
+
+                                using var connectionOpcoes = _context.Database.GetDbConnection();
+                                await connectionOpcoes.OpenAsync();
+
+                                using var commandOpcoes = connectionOpcoes.CreateCommand();
+                                commandOpcoes.CommandText = sqlOpcoes;
+
+                                using var readerOpcoes = await commandOpcoes.ExecuteReaderAsync();
+                                while (await readerOpcoes.ReadAsync())
+                                {
+                                    opcoes.Add(new DynamicOpcaoRequest
+                                    {
+                                        IdRegistro = Convert.ToInt32(readerOpcoes[relacionamento.TabelaDestino.CampoPK]),
+                                        ValorExibicao = readerOpcoes[relacionamento.CampoParaExibicaoRelacionamento]?.ToString()
+                                    });
+                                }
+                            }
+                        }
+                        valores.Add(new DynamicFieldRequest
+                        {
+                            NomeCampoBase = campo.NomeCampoBase,
+                            NomeCampoTela = campo.NomeCampoTela,
+                            Tipo = campo.Tipo,
+                            Tamanho = campo.Tamanho,
+                            IsPrimaryKey = campo.IsPrimaryKey,
+                            IsForeigeKey = campo.IsForeigeKey,
+                            IsObrigatorio = campo.IsObrigatorio,
+                            Id = campo.Id,
+                            IdTabela = campo.TableId,
+                            Valor = valorLido,
+                            Opcoes = opcoes
+                        });
+                    }
+                    var registro = new DynamicDadoRequest
+                    {
+                        Id = idConsultado,
+                        Valores = valores
+                    };
+                    registros.Add(registro);
+                }
+            }
+
+            if (IsExisteRegistro)
+            {
+                var response = new DynamicTableRequest
+                {
+                    NomeTabela = table.NomeTabela,
+                    NomeTela = table.NomeTela,
+                    CampoPK = table.CampoPK,
+                    Id = table.Id,
+                    Resultados = registros
+                };
+                return await Result<DynamicTableRequest>.SuccessAsync(response);
+            }
+            else
+            {
+                return await Result<DynamicTableRequest>.FailAsync($"Não foi encontrado nenhum registro com o Id '{request.IdRegistro}' informado");
+            }
         }
 
         public async Task<IResult<List<MenuRequest>>> GetMenu()
@@ -252,10 +456,14 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
         public async Task<IResult<DynamicTableRequest>> GetNewObjetoDinamico(int idTabela)
         {
-            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == idTabela);
+            var table = await _context.Tables
+                .Include(t => t.Fields)
+                .Include(t => t.RelacionamentosComoOrigem) // Inclui os relacionamentos
+                .Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId))
+                .FirstOrDefaultAsync(t => t.Id == idTabela);
 
             if (table == null)
-                return await Result<DynamicTableRequest>.FailAsync("Tabela não encontrada.");
+                return await Result<DynamicTableRequest>.FailAsync("Tela não encontrada.");
 
             var campos = table.Fields;
 
@@ -264,7 +472,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 Id = table.Id,
                 NomeTabela = table.NomeTabela,
                 NomeTela = table.NomeTela,
-                Resultados = new List<DynamicDadoRequest>() 
+                Resultados = new List<DynamicDadoRequest>()
                 {
                     new DynamicDadoRequest()
                     {
@@ -275,27 +483,84 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             };
 
             foreach (var resultado in retorno.Resultados)
-            { 
+            {
                 foreach (var campo in campos)
                 {
                     if (campo.IsPrimaryKey)
-                        retorno.CampoPK = campo.NomeCampoBase;
-
-                    resultado.Valores.Add(new DynamicFieldRequest
                     {
-                        NomeCampoBase = campo.NomeCampoBase,
-                        NomeCampoTela = campo.NomeCampoTela,
-                        Tipo = campo.Tipo,
-                        Tamanho = campo.Tamanho,
-                        IsPrimaryKey = campo.IsPrimaryKey,
-                        IsObrigatorio = campo.IsObrigatorio,
-                        Id = campo.Id,
-                        IdTabela = table.Id,
-                        Valor = string.Empty
-                    });
+                        retorno.CampoPK = campo.NomeCampoBase;
+                    }
+                    else if (campo.IsForeigeKey)
+                    {
+                        // Busca o relacionamento correspondente
+                        var relacionamento = table.RelacionamentosComoOrigem
+                            .FirstOrDefault(r => r.CampoOrigem == campo.NomeCampoBase);
+
+                        var opcoes = new List<DynamicOpcaoRequest?>();
+
+                        if (relacionamento != null)
+                        {
+                            // Monta a consulta para buscar os valores da tabela relacionada
+                            var sqlOpcoes = $@"
+                                SELECT {relacionamento.TabelaDestino.CampoPK}, 
+                                {relacionamento.CampoParaExibicaoRelacionamento} 
+                                FROM {relacionamento.TabelaDestino.NomeTabela};";
+
+                            using var connection = _context.Database.GetDbConnection();
+                            await connection.OpenAsync();
+
+                            using var command = connection.CreateCommand();
+                            command.CommandText = sqlOpcoes;
+
+                            using var reader = await command.ExecuteReaderAsync();
+                            while (await reader.ReadAsync())
+                            {
+                                opcoes.Add(new DynamicOpcaoRequest
+                                {
+                                    IdRegistro = Convert.ToInt32(reader[relacionamento.TabelaDestino.CampoPK]),
+                                    ValorExibicao = reader[relacionamento.CampoParaExibicaoRelacionamento]?.ToString()
+                                });
+                            }
+                        }
+
+                        // Adiciona o campo com as opções
+                        resultado.Valores.Add(new DynamicFieldRequest
+                        {
+                            NomeCampoBase = campo.NomeCampoBase,
+                            NomeCampoTela = campo.NomeCampoTela,
+                            Tipo = campo.Tipo,
+                            Tamanho = campo.Tamanho,
+                            IsPrimaryKey = campo.IsPrimaryKey,
+                            IsForeigeKey = campo.IsForeigeKey,
+                            IsObrigatorio = campo.IsObrigatorio,
+                            Id = campo.Id,
+                            IdTabela = table.Id,
+                            Valor = string.Empty,
+                            Opcoes = opcoes
+                        });
+                    }
+                    else
+                    {
+                        // Adiciona campos normais sem opções
+                        resultado.Valores.Add(new DynamicFieldRequest
+                        {
+                            NomeCampoBase = campo.NomeCampoBase,
+                            NomeCampoTela = campo.NomeCampoTela,
+                            Tipo = campo.Tipo,
+                            Tamanho = campo.Tamanho,
+                            IsPrimaryKey = campo.IsPrimaryKey,
+                            IsForeigeKey = campo.IsForeigeKey,
+                            IsObrigatorio = campo.IsObrigatorio,
+                            Id = campo.Id,
+                            IdTabela = table.Id,
+                            Valor = string.Empty
+                        });
+                    }
                 }
             }
+
             return await Result<DynamicTableRequest>.SuccessAsync(retorno);
         }
+
     }
 }

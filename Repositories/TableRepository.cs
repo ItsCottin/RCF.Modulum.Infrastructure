@@ -27,9 +27,9 @@ namespace modulum.Infrastructure.Repositories
             await _repository.AddAsync(table);
         }
 
-        public async Task GetTableById(int id)
+        public async Task<Table?> GetTableById(int id)
         {
-            await _repository.GetByIdAsync(id);
+            return await _repository.GetByIdAsync(id);
         }
 
         public async Task DeleteTable(Table table)

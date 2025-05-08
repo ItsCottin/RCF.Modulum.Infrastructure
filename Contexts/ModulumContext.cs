@@ -44,6 +44,7 @@ namespace modulum.Infrastructure.Contexts
         public DbSet<ModulumRoleClaim> ModulumRoleClaims { get; set; }
         public DbSet<Table> Tables { get; set; }
         public DbSet<Field> Fields { get; set; }
+        public DbSet<Relationship> Relationships { get; set; }
         public DbSet<NugetPacote> NugetPacotes { get; set; }
 
         public DbSet<TwoFactor> TwoFactors { get; set; }
@@ -114,6 +115,24 @@ namespace modulum.Infrastructure.Contexts
             {
                 entity.ToTable("tbl_field", "dbo");
                 entity.Property(f => f.Tipo).HasConversion<string>();
+            });
+
+            builder.Entity<Relationship>(entity =>
+            {
+                entity.ToTable("tbl_relationship", "dbo");
+                entity.Property(f => f.Tipo).HasConversion<string>();
+
+                entity.HasOne(r => r.TabelaOrigem)
+                      .WithMany(t => t.RelacionamentosComoOrigem)
+                      .HasForeignKey(r => r.TabelaOrigemId)
+                      .OnDelete(DeleteBehavior.Restrict)
+                      .IsRequired();
+
+                entity.HasOne(r => r.TabelaDestino)
+                      .WithMany(t => t.RelacionamentosComoDestino)
+                      .HasForeignKey(r => r.TabelaDestinoId)
+                      .OnDelete(DeleteBehavior.Restrict)
+                      .IsRequired();
             });
 
             builder.Entity<TwoFactor>(entity =>

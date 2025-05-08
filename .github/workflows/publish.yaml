@@ -77,6 +77,7 @@ jobs:
           echo "MODULUM_SECRET_JWT=${{ secrets.MODULUM_SECRET_JWT }}" >> $GITHUB_ENV
           echo "URL_CLIENT=${{ secrets.URL_CLIENT }}" >> $GITHUB_ENV
           echo "SEND_GRID_MAIL_API_KEY=${{ secrets.SEND_GRID_MAIL_API_KEY }}" >> $GITHUB_ENV
+          echo "MODULUM_BLOB_DATASEEDER=${{ secrets.MODULUM_BLOB_DATASEEDER }}" >> $GITHUB_ENV
 
       - name: Restore Dependencies
         run: dotnet restore
