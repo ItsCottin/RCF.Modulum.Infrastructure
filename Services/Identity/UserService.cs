@@ -91,8 +91,46 @@ namespace modulum.Infrastructure.Services.Identity
             }
         }
 
+        public bool ValidaCPF(string cpf)
+        {
+            cpf = new string(cpf.Where(char.IsDigit).ToArray());
+
+            if (cpf.Length != 11)
+                return false;
+
+            if (cpf.Distinct().Count() == 1)
+                return false;
+
+            for (int j = 9; j < 11; j++)
+            {
+                int soma = 0;
+                for (int i = 0; i < j; i++)
+                    soma += (cpf[i] - '0') * (j + 1 - i);
+
+                int digito = soma % 11;
+                digito = digito < 2 ? 0 : 11 - digito;
+
+                if ((cpf[j] - '0') != digito)
+                    return false;
+            }
+            return true;
+        }
+
+        public string AplicaMascaraCPF(string cpf)
+        {
+            cpf = new string(cpf.Where(char.IsDigit).ToArray());
+
+            if (cpf.Length != 11)
+                return cpf;
+
+            return $"{cpf.Substring(0, 3)}.{cpf.Substring(3, 3)}.{cpf.Substring(6, 3)}-{cpf.Substring(9, 2)}";
+        }
+
         public async Task<IResult> CadastroExterno(CadastroExternoRequest request)
         {
+            if (!ValidaCPF(request.Cpf))
+                await Result.FailAsync(string.Format("O CPF '{0}' informado é inválido", AplicaMascaraCPF(request.Cpf)));
+
             var userWithSameEmail = await _userManager.FindByEmailAsync(request.Email);
             var user = new ModulumUser
             {
@@ -100,7 +138,7 @@ namespace modulum.Infrastructure.Services.Identity
                 EmailConfirmed = true,
                 IsCadastroFinalizado = true,
                 UserName = request.Email,
-                Cpf = request.Cpf,
+                Cpf = AplicaMascaraCPF(request.Cpf),
                 NormalizedUserName = request.Email.ToUpperInvariant()
             };
             if (userWithSameEmail == null)
