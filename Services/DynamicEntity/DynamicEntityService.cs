@@ -183,25 +183,55 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             // Adiciona novos relacionamentos
             foreach (var relacionamento in relacionamentosAdicionar)
             {
+                // correção pensada por mim mesmo
+                var tableDestino = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaDestinoId);
+                relacionamento.TabelaDestino = tableDestino;
+
+                var tableOrigem = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaOrigemId);
+                relacionamento.TabelaOrigem = tableOrigem;
+
                 
+
                 // Define o nome da coluna e o nome da constraint de chave estrangeira
-                var nomeColuna = $"{relacionamento.CampoOrigem}_{relacionamento.TabelaDestino.NomeTabela}";
-                var fkName = $"FK_{table.NomeTabela}_{relacionamento.TabelaDestino.NomeTabela}_{relacionamento.CampoOrigem}";
+                var nomeColuna = $"{relacionamento.CampoDestino}_{relacionamento.TabelaDestino.NomeTabela}";
+                var fkName = $"FK_{table.NomeTabela}_{relacionamento.TabelaDestino.NomeTabela}_{relacionamento.CampoDestino}";
+
+                relacionamento.CampoOrigem = nomeColuna;
 
                 // Adiciona o relacionamento na tabela
                 relacionamento.NomeConstraint = fkName;
                 table.RelacionamentosComoOrigem.Add(relacionamento);
 
                 // Adiciona a coluna correspondente na tabela dinâmica como FOREIGN KEY
-                var sql = $@"ALTER TABLE {table.NomeTabela} ADD {nomeColuna} INT, 
-                            CONSTRAINT {fkName} FOREIGN KEY ({nomeColuna}) REFERENCES {relacionamento.TabelaDestino.NomeTabela}({relacionamento.CampoDestino});";
+                var sql = $@"ALTER TABLE {table.NomeTabela} ADD {nomeColuna} INT, CONSTRAINT {fkName} FOREIGN KEY ({nomeColuna}) REFERENCES {relacionamento.TabelaDestino.NomeTabela}({relacionamento.CampoDestino});";
                 await _context.Database.ExecuteSqlRawAsync(sql);
+
+                _context.Fields.Add(new Field 
+                    { 
+                        IsForeigeKey = true, 
+                        IsObrigatorio = relacionamento.IsObrigatorio, 
+                        IsPrimaryKey = false,
+                        NomeCampoBase = nomeColuna,
+                        NomeCampoTela = request.FirstOrDefault(x => x.TabelaOrigemId == relacionamento.TabelaOrigemId).CampoTelaParaExibicaoRelacionamento,
+                        Tipo = TypeColumnEnum.INT,
+                        TableId = table.Id,
+                        Tamanho = null
+                });
+
+                await _context.SaveChangesAsync();
             }
 
 
             // Remove relacionamentos antigos
             foreach (var relacionamento in relacionamentosRemover)
             {
+                // correção pensada por mim mesmo
+                var tableDestino = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaDestinoId);
+                relacionamento.TabelaDestino = tableDestino;
+
+                var tableOrigem = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaDestinoId);
+                relacionamento.TabelaOrigem = tableOrigem;
+
                 // Define o nome da coluna e da constraint
                 var nomeColuna = $"{relacionamento.CampoOrigem}_{relacionamento.TabelaDestino.NomeTabela}";
                 var fkName = relacionamento.NomeConstraint;
@@ -221,7 +251,6 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
             // Salva as alterações no banco de dados
             _context.Tables.Update(table);
-            await _context.SaveChangesAsync();
 
             return await Result.SuccessAsync("Relacionamentos alterados com sucesso");
         }
@@ -236,6 +265,11 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             
             var relacionamento = await _context.Relationships.Where(r => r.TabelaOrigemId == tableId).ToListAsync();
             var retorno = _mapper.Map<List<CreateDynamicRelationshipRequest>>(relacionamento);
+            retorno.ForEach(r =>
+            {
+                r.NomeTelaOrigem = table.NomeTabela;
+                r.NomeTelaDestino = _context.Tables.FirstOrDefault(t => t.Id == r.TabelaDestinoId).NomeTela;
+            });
             return await Result<List<CreateDynamicRelationshipRequest>>.SuccessAsync(retorno);
         }
 

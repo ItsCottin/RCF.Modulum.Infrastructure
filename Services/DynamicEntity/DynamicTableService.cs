@@ -239,51 +239,28 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 return await Result<DynamicTableRequest>.FailAsync("Tela não encontrada.");
 
             var campos = table.Fields;
-
             var colunas = campos.Select(c => c.NomeCampoBase).ToList();
             var sql = $"SELECT {string.Join(",", colunas)} FROM {table.NomeTabela};";
-
             var registros = new List<DynamicDadoRequest>();
+            var relacionamentos = _context.Relationships
+                .Include(r => r.TabelaDestino).Where(r => r.TabelaOrigemId == table.Id).ToList();
 
-            using var connection = _context.Database.GetDbConnection();
-            await connection.OpenAsync();
-
-            using var command = connection.CreateCommand();
-            command.CommandText = sql;
-
-            int idregistro;
-
-            using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            // Pré-carrega todas as opções de campos estrangeiros em memória
+            var opcoesRelacionamentos = new Dictionary<string, List<DynamicOpcaoRequest>>();
+            using (var connection = _context.Database.GetDbConnection())
             {
-                var valores = new List<DynamicFieldRequest>();
+                await connection.OpenAsync();
 
-                foreach (var campo in campos)
+                foreach (var relacionamento in relacionamentos)
                 {
-                    var valorLido = reader[campo.NomeCampoBase]?.ToString();
-                    if (campo.Tipo == TypeColumnEnum.BIT)
-                    {
-                        valorLido = valorLido.Equals("True") ? "1" : "0"; // Fix consulta quando o dado em base é um bit
-                    }
-
-                // Preenche as opções se o campo for uma chave estrangeira
-                var opcoes = new List<DynamicOpcaoRequest?>();
-                if (campo.IsForeigeKey)
-                {
-                    var relacionamento = table.RelacionamentosComoOrigem
-                        .FirstOrDefault(r => r.CampoOrigem == campo.NomeCampoBase);
-
-                    if (relacionamento != null)
+                    if (relacionamento.TabelaDestino != null && !string.IsNullOrWhiteSpace(relacionamento.CampoParaExibicaoRelacionamento))
                     {
                         var sqlOpcoes = $"SELECT {relacionamento.TabelaDestino.CampoPK}, {relacionamento.CampoParaExibicaoRelacionamento} FROM {relacionamento.TabelaDestino.NomeTabela};";
-
-                        using var connectionOpcoes = _context.Database.GetDbConnection();
-                        await connectionOpcoes.OpenAsync();
-
-                        using var commandOpcoes = connectionOpcoes.CreateCommand();
+                        using var commandOpcoes = connection.CreateCommand();
                         commandOpcoes.CommandText = sqlOpcoes;
-
                         using var readerOpcoes = await commandOpcoes.ExecuteReaderAsync();
+
+                        var opcoes = new List<DynamicOpcaoRequest>();
                         while (await readerOpcoes.ReadAsync())
                         {
                             opcoes.Add(new DynamicOpcaoRequest
@@ -292,35 +269,55 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                                 ValorExibicao = readerOpcoes[relacionamento.CampoParaExibicaoRelacionamento]?.ToString()
                             });
                         }
+                        opcoesRelacionamentos[relacionamento.CampoOrigem] = opcoes;
                     }
                 }
 
-                valores.Add(new DynamicFieldRequest
-                    {
-                        NomeCampoBase = campo.NomeCampoBase,
-                        NomeCampoTela = campo.NomeCampoTela,
-                        Tipo = campo.Tipo,
-                        Tamanho = campo.Tamanho,
-                        IsPrimaryKey = campo.IsPrimaryKey,
-                        IsForeigeKey = campo.IsForeigeKey,
-                        IsObrigatorio = campo.IsObrigatorio,
-                        Id = campo.Id,
-                        IdTabela = campo.TableId,
-                        Valor = valorLido,
-                        Opcoes = opcoes
-                });
-                }
-
-                var pkValue = reader[table.CampoPK]?.ToString();
-                var idRegistro = int.TryParse(pkValue, out var idParsed) ? idParsed : 0;
-
-                var registro = new DynamicDadoRequest
+                // Agora executa a consulta principal
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
                 {
-                    Id = idRegistro, // Chat, Preencher aqui o valor do Id do registro definido no campo "CampoPK", lembrando que o id sempre sera int
-                    Valores = valores
-                };
+                    var valores = new List<DynamicFieldRequest>();
+                    foreach (var campo in campos)
+                    {
+                        var valorLido = reader[campo.NomeCampoBase]?.ToString();
+                        if (campo.Tipo == TypeColumnEnum.BIT)
+                        {
+                            valorLido = valorLido.Equals("True") ? "1" : "0";
+                        }
 
-                registros.Add(registro);
+                        // Busca as opções já carregadas em memória
+                        var opcoes = campo.IsForeigeKey && opcoesRelacionamentos.ContainsKey(campo.NomeCampoBase)
+                            ? opcoesRelacionamentos[campo.NomeCampoBase].Cast<DynamicOpcaoRequest?>().ToList()
+                            : new List<DynamicOpcaoRequest?>();
+
+                        valores.Add(new DynamicFieldRequest
+                        {
+                            NomeCampoBase = campo.NomeCampoBase,
+                            NomeCampoTela = campo.NomeCampoTela,
+                            Tipo = campo.Tipo,
+                            Tamanho = campo.Tamanho,
+                            IsPrimaryKey = campo.IsPrimaryKey,
+                            IsForeigeKey = campo.IsForeigeKey,
+                            IsObrigatorio = campo.IsObrigatorio,
+                            Id = campo.Id,
+                            IdTabela = campo.TableId,
+                            Valor = valorLido,
+                            Opcoes = opcoes
+                        });
+                    }
+
+                    var pkValue = reader[table.CampoPK]?.ToString();
+                    var idRegistro = int.TryParse(pkValue, out var idParsed) ? idParsed : 0;
+
+                    registros.Add(new DynamicDadoRequest
+                    {
+                        Id = idRegistro,
+                        Valores = valores
+                    });
+                }
             }
 
             var response = new DynamicTableRequest
@@ -334,6 +331,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
             return await Result<DynamicTableRequest>.SuccessAsync(response);
         }
+
 
         public async Task<IResult<DynamicTableRequest>> ConsultaRegistroPorIdTabelaEIdRegistroAsync(DynamicForIdRequest request)
         {
@@ -496,15 +494,15 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                         var relacionamento = table.RelacionamentosComoOrigem
                             .FirstOrDefault(r => r.CampoOrigem == campo.NomeCampoBase);
 
+                        relacionamento.TabelaOrigem = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaOrigemId);
+                        relacionamento.TabelaDestino = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaDestinoId);
+
                         var opcoes = new List<DynamicOpcaoRequest?>();
 
                         if (relacionamento != null)
                         {
                             // Monta a consulta para buscar os valores da tabela relacionada
-                            var sqlOpcoes = $@"
-                                SELECT {relacionamento.TabelaDestino.CampoPK}, 
-                                {relacionamento.CampoParaExibicaoRelacionamento} 
-                                FROM {relacionamento.TabelaDestino.NomeTabela};";
+                            var sqlOpcoes = $@"SELECT {relacionamento.TabelaDestino.CampoPK}, {relacionamento.CampoParaExibicaoRelacionamento} FROM {relacionamento.TabelaDestino.NomeTabela};";
 
                             using var connection = _context.Database.GetDbConnection();
                             await connection.OpenAsync();

@@ -33,6 +33,7 @@ using static modulum.Shared.Constants.Permission.Permissions;
 using modulum.Application.Requests.Account;
 using modulum.Application.Interfaces.Repositories;
 using RCF.Modulum.Shared.Constants.Email;
+using RCF.Modulum.Application.Requests.Identity;
 
 namespace modulum.Infrastructure.Services.Identity
 {
@@ -87,6 +88,44 @@ namespace modulum.Infrastructure.Services.Identity
             else
             {
                 return await Result.FailAsync(string.Format("E-mail '{0}' não cadastrado.", userWithSameEmail.Email));
+            }
+        }
+
+        public async Task<IResult> CadastroExterno(CadastroExternoRequest request)
+        {
+            var userWithSameEmail = await _userManager.FindByEmailAsync(request.Email);
+            var user = new ModulumUser
+            {
+                Email = request.Email,
+                EmailConfirmed = true,
+                IsCadastroFinalizado = true,
+                UserName = request.Email,
+                Cpf = request.Cpf,
+                NormalizedUserName = request.Email.ToUpperInvariant()
+            };
+            if (userWithSameEmail == null)
+            {
+                var result = await _userManager.CreateAsync(user, request.Password);
+                if (result.Succeeded)
+                {
+                    var UserRegistrado = await _userManager.FindByEmailAsync(user.Email);
+                    if (UserRegistrado == null)
+                    {
+                        await Result.FailAsync(string.Format("Ocorreu um erro ao cadastrar o E-mail '{0}'", request.Email));
+                    }
+                    await _userManager.AddToRoleAsync(user, RoleConstants.BasicRole);
+                    await _dbContext.SaveChangesAsync();
+                    return await Result<string>.SuccessAsync(user.Id.ToString(), string.Format("E-mail '{0}' registrado com sucesso", user.Email));
+                }
+                else
+                {
+                    return await Result.FailAsync(result.Errors.Select(a => a.Description.ToString()).ToList());
+                }
+            }
+            else
+            {
+                var fields = new Dictionary<string, string> { { "Email", string.Format("O E-mail '{0}' já está registrado.", request.Email) } };
+                return await Result.FailAsync(string.Format("O E-mail '{0}' já está registrado.", request.Email), fields);
             }
         }
 
