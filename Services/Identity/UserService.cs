@@ -33,7 +33,6 @@ using static modulum.Shared.Constants.Permission.Permissions;
 using modulum.Application.Requests.Account;
 using modulum.Application.Interfaces.Repositories;
 using RCF.Modulum.Shared.Constants.Email;
-using RCF.Modulum.Application.Requests.Identity;
 
 namespace modulum.Infrastructure.Services.Identity
 {
@@ -131,6 +130,13 @@ namespace modulum.Infrastructure.Services.Identity
             if (!ValidaCPF(request.Cpf))
                 await Result.FailAsync(string.Format("O CPF '{0}' informado é inválido", AplicaMascaraCPF(request.Cpf)));
 
+            var userWithSameCpf = await _userManager.Users.Where(u => u.Cpf == request.Cpf).FirstOrDefaultAsync();
+            if (userWithSameCpf != null)
+            {
+                var fields = new Dictionary<string, string> { { "Cpf", string.Format("O CPF '{0}' já está registrado.", AplicaMascaraCPF(request.Cpf)) } };
+                return await Result.FailAsync(string.Format("O CPF '{0}' já está registrado.", AplicaMascaraCPF(request.Cpf)), fields);
+            }
+
             var userWithSameEmail = await _userManager.FindByEmailAsync(request.Email);
             var user = new ModulumUser
             {
@@ -138,6 +144,7 @@ namespace modulum.Infrastructure.Services.Identity
                 EmailConfirmed = true,
                 IsCadastroFinalizado = true,
                 UserName = request.Email,
+                NomeCompleto = request.Name,
                 Cpf = AplicaMascaraCPF(request.Cpf),
                 NormalizedUserName = request.Email.ToUpperInvariant()
             };

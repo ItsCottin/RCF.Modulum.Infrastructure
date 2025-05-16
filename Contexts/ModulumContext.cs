@@ -59,6 +59,7 @@ namespace modulum.Infrastructure.Contexts
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.Property(e => e.RefreshToken).IsRequired(false);
                 entity.Property(e => e.IsCadastroFinalizado).HasDefaultValue(true);
+                entity.Property(e => e.Cpf).IsUnicode(false).HasMaxLength(11).IsRequired(false);
 
                 // Campos removidos do IdentityUser
                 entity.Ignore(e => e.PhoneNumber);
