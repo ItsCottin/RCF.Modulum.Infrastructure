@@ -20,6 +20,7 @@ using modulum.Application.Requests.Dynamic.Relationship;
 using Azure.Core;
 using modulum.Application.Responses.Dynamic;
 using MediatR;
+using modulum.Application.Requests.Dynamic;
 
 namespace modulum.Infrastructure.Services.DynamicEntity
 {
@@ -45,61 +46,13 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             _currentUserService = currentUserService;
         }
 
-        // Service ja preparado para remover campos referente a base "NomeTabela" e "NomeCampoBase"
         public async Task<IResult> CriarMapTabelaAsync(CreateDynamicTableRequest request) 
         {
             var table = _mapper.Map<Table>(request);
             table = GetModelTableRegularizado(table);
 
-            //var relacionamentoBase = new List<Relationship>();
-            //bool IsExisteRelacionamento = false;
-            //if (request.Relacionamentos != null)
-            //{
-            //    if (request.Relacionamentos.Count != 0)
-            //    {
-            //        IsExisteRelacionamento = true;
-            //        foreach (var relacionamento in request.Relacionamentos)
-            //        {
-            //            var tableDestino = await _context.Tables.FirstOrDefaultAsync(x => x.Id == relacionamento.IdTable);
-            //            var campo = new Field()
-            //            {
-            //                NomeCampoBase = relacionamento.NomeCampoId + "_" + tableDestino.NomeTabela,
-            //                NomeCampoTela = tableDestino.CampoParaExibicaoRelacionamento,
-            //                Tipo = TypeColumnEnum.INT,
-            //                IsPrimaryKey = false,
-            //                IsForeigeKey = true,
-            //                TableId = table.Id
-            //            };
-            //            table.Fields.Add(campo);
-            //        };
-            //    }
-            //}
-
             _context.Tables.Add(table);
             await _context.SaveChangesAsync();
-            //table = await _tableRepository.GetTableByName(table.NomeTabela);
-            //
-            //if (IsExisteRelacionamento)
-            //{
-            //    foreach (var relacionamento in request.Relacionamentos)
-            //    {
-            //        var tableDestino = await _context.Tables.Include(t => t.Fields).FirstOrDefaultAsync(x => x.Id == relacionamento.IdTable);
-            //        var NomeCampoOrigem = table.Fields.FirstOrDefault(x => x.NomeCampoBase.Contains(tableDestino.NomeTabela) && x.IsForeigeKey);
-            //        relacionamentoBase.Add(new Relationship()
-            //        {
-            //            Id = 0,
-            //            TabelaOrigemId = table.Id,
-            //            TabelaOrigem = table,
-            //            TabelaDestinoId = relacionamento.IdTable,
-            //            TabelaDestino = tableDestino,
-            //            CampoOrigem = NomeCampoOrigem.NomeCampoBase,
-            //            CampoDestino = tableDestino.CampoPK,
-            //        });
-            //    }
-            //}
-            //
-            //await _context.Relationships.AddRangeAsync(relacionamentoBase);
-            //await _context.SaveChangesAsync();
 
             try
             {
@@ -121,18 +74,6 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                         column += " PRIMARY KEY IDENTITY(1,1)";
 
                     columnDefinitions.Add(column);
-
-                    //if (f.IsForeigeKey)
-                    //{
-                    //    // Procura o relacionamento com base no nome do campo
-                    //    var relacionamento = relacionamentoBase.FirstOrDefault(r => r.CampoOrigem == f.NomeCampoBase);
-                    //    if (relacionamento != null)
-                    //    {
-                    //        string fkName = $"FK_{table.NomeTabela}_{fkIndex++}";
-                    //        string constraint = $"CONSTRAINT {fkName} FOREIGN KEY ({f.NomeCampoBase}) REFERENCES {relacionamento.TabelaDestino.NomeTabela}({relacionamento.CampoDestino})";
-                    //        foreignKeyConstraints.Add(constraint);
-                    //    }
-                    //}
                 }
 
                 var allDefinitions = columnDefinitions.Concat(foreignKeyConstraints);
@@ -150,12 +91,19 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             }
         }
 
+        /// <summary>
+        /// Metodo responsável por alterar os relacionamentos entre as tabelas
+        /// Termo "Origem" se refere ao objeto cujo o PrimareyKey é o campo que vai virar ForeignKey no termo "Destino"
+        /// Esse metodo tem como função adicionar ou alterar um relacionamento
+        /// Responsabilidade de deletar um relacionamento foi migrado para o metodo DeletarRelacionamento e criado um novo endpoint
+        /// </summary>
+        /// <param name="request"></param>
+        /// <returns></returns>
         public async Task<IResult> AlterRelacionamento(List<CreateDynamicRelationshipRequest> request)
         {
-            // Obtém a tabela de origem com seus campos
             var table = await _context.Tables
                 .Include(t => t.Fields)
-                .Include(t => t.RelacionamentosComoOrigem)
+                .Include(t => t.RelacionamentosComoDestino)
                 .Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId))
                 .FirstOrDefaultAsync(t => t.Id == request.FirstOrDefault().TabelaOrigemId);
 
@@ -164,49 +112,60 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 return await Result.FailAsync($"Tela não encontrada");
             }
 
-            // Mapeia os relacionamentos do request para a entidade Relationship
             var relacionamentosRequest = _mapper.Map<List<Relationship>>(request);
 
-            // Relacionamentos existentes no banco de dados
-            var relacionamentosExistentes = table.RelacionamentosComoOrigem;
+            var relacionamentosExistentes = table.RelacionamentosComoDestino;
 
-            // Identifica relacionamentos a serem adicionados
             var relacionamentosAdicionar = relacionamentosRequest
-                .Where(r => !relacionamentosExistentes.Any(e => e.TabelaDestinoId == r.TabelaDestinoId && e.CampoOrigem == r.CampoOrigem))
+                .Where(x => x.Tipo == TypeRelationshipEnum.OneToMany && x.Id == 0)
+                .Where(r => !relacionamentosExistentes.Any(e => e.TabelaDestinoId == r.TabelaDestinoId && e.TabelaOrigemId == r.TabelaOrigemId))
                 .ToList();
 
-            // Identifica relacionamentos a serem removidos
-            var relacionamentosRemover = relacionamentosExistentes
-                .Where(e => !relacionamentosRequest.Any(r => r.TabelaDestinoId == e.TabelaDestinoId && r.CampoOrigem == e.CampoOrigem))
+            var relacionamentosAlterar = relacionamentosRequest
+                .Where(r => !relacionamentosExistentes.Any(e => e.TabelaDestinoId == r.TabelaDestinoId && e.TabelaOrigemId == r.TabelaOrigemId && e.CampoParaExibicaoRelacionamento != r.CampoParaExibicaoRelacionamento) && r.Tipo == TypeRelationshipEnum.OneToMany && r.Id > 0)
                 .ToList();
 
-            // Adiciona novos relacionamentos
             foreach (var relacionamento in relacionamentosAdicionar)
             {
-                // correção pensada por mim mesmo
                 var tableDestino = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaDestinoId);
                 relacionamento.TabelaDestino = tableDestino;
 
                 var tableOrigem = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaOrigemId);
                 relacionamento.TabelaOrigem = tableOrigem;
 
-                
+                relacionamento.CampoOrigem = tableOrigem.CampoPK;
 
-                // Define o nome da coluna e o nome da constraint de chave estrangeira
-                var nomeColuna = $"{relacionamento.CampoDestino}_{relacionamento.TabelaDestino.NomeTabela}";
-                var fkName = $"FK_{table.NomeTabela}_{relacionamento.TabelaDestino.NomeTabela}_{relacionamento.CampoDestino}";
 
-                relacionamento.CampoOrigem = nomeColuna;
+                var nomeColuna = $"{relacionamento.CampoOrigem}_{relacionamento.TabelaOrigem.NomeTabela}";
+                var fkName = $"FK_{relacionamento.TabelaDestino.NomeTabela}_{nomeColuna}_REF_{relacionamento.TabelaOrigem.NomeTabela}_{relacionamento.CampoOrigem}";
 
-                // Adiciona o relacionamento na tabela
+                relacionamento.CampoDestino = nomeColuna;
+
                 relacionamento.NomeConstraint = fkName;
-                table.RelacionamentosComoOrigem.Add(relacionamento);
+                var relacionamentos = new List<Relationship>();
+                relacionamentos.Add(relacionamento);
+
+                // Avaliar a nescessidade de armazenar o relacionamento "voltando"
+                relacionamentos.Add(new Relationship 
+                {
+                    TabelaOrigemId = tableDestino.Id,
+                    TabelaDestinoId = tableOrigem.Id,
+                    TabelaDestino = tableOrigem,
+                    TabelaOrigem = tableDestino,
+                    CampoDestino = relacionamento.CampoOrigem,
+                    CampoOrigem = relacionamento.CampoDestino,
+                    NomeConstraint = fkName,
+                    IsObrigatorio = relacionamento.IsObrigatorio,
+                    Tipo = TypeRelationshipEnum.ManyToOne // Se for nescessario, avaliar qual tipo usar para o relacionamento "voltando"
+                });
+
+                await _context.Relationships.AddRangeAsync(relacionamentos);
 
                 // Adiciona a coluna correspondente na tabela dinâmica como FOREIGN KEY
-                var sql = $@"ALTER TABLE {table.NomeTabela} ADD {nomeColuna} INT, CONSTRAINT {fkName} FOREIGN KEY ({nomeColuna}) REFERENCES {relacionamento.TabelaDestino.NomeTabela}({relacionamento.CampoDestino});";
+                var sql = $@"ALTER TABLE {relacionamento.TabelaDestino.NomeTabela} ADD {nomeColuna} INT, CONSTRAINT {fkName} FOREIGN KEY ({nomeColuna}) REFERENCES {relacionamento.TabelaOrigem.NomeTabela}({relacionamento.CampoOrigem});";
                 await _context.Database.ExecuteSqlRawAsync(sql);
 
-                _context.Fields.Add(new Field 
+                await _context.Fields.AddAsync(new Field 
                     { 
                         IsForeigeKey = true, 
                         IsObrigatorio = relacionamento.IsObrigatorio, 
@@ -214,43 +173,26 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                         NomeCampoBase = nomeColuna,
                         NomeCampoTela = request.FirstOrDefault(x => x.TabelaOrigemId == relacionamento.TabelaOrigemId).CampoTelaParaExibicaoRelacionamento,
                         Tipo = TypeColumnEnum.INT,
-                        TableId = table.Id,
+                        TableId = relacionamento.TabelaDestinoId,
                         Tamanho = null
                 });
 
                 await _context.SaveChangesAsync();
             }
 
-
-            // Remove relacionamentos antigos
-            foreach (var relacionamento in relacionamentosRemover)
+            foreach (var item in relacionamentosAlterar)
             {
-                // correção pensada por mim mesmo
-                var tableDestino = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaDestinoId);
-                relacionamento.TabelaDestino = tableDestino;
+                var relacionamentoDb = await _context.Relationships.FirstOrDefaultAsync(x => x.Id == item.Id);
+                if (relacionamentoDb == null)
+                {
+                    return await Result.FailAsync("Relacionamento não encontrado");
+                }
 
-                var tableOrigem = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaDestinoId);
-                relacionamento.TabelaOrigem = tableOrigem;
+                relacionamentoDb.CampoParaExibicaoRelacionamento = item.CampoParaExibicaoRelacionamento;
 
-                // Define o nome da coluna e da constraint
-                var nomeColuna = $"{relacionamento.CampoOrigem}_{relacionamento.TabelaDestino.NomeTabela}";
-                var fkName = relacionamento.NomeConstraint;
-
-                // Remove o relacionamento da tabela
-                table.RelacionamentosComoOrigem.Remove(relacionamento);
-
-                // Remove a constraint de chave estrangeira
-                var dropConstraintSql = $"ALTER TABLE {table.NomeTabela} DROP CONSTRAINT {fkName};";
-                await _context.Database.ExecuteSqlRawAsync(dropConstraintSql);
-
-                // Remove a coluna correspondente na tabela dinâmica
-                var dropColumnSql = $"ALTER TABLE {table.NomeTabela} DROP COLUMN {nomeColuna};";
-                await _context.Database.ExecuteSqlRawAsync(dropColumnSql);
+                _context.Update(relacionamentoDb);
+                await _context.SaveChangesAsync();
             }
-
-
-            // Salva as alterações no banco de dados
-            _context.Tables.Update(table);
 
             return await Result.SuccessAsync("Relacionamentos alterados com sucesso");
         }
@@ -263,14 +205,72 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 return await Result<List<CreateDynamicRelationshipRequest>>.FailAsync("Tabela não encontrada");
             }
             
-            var relacionamento = await _context.Relationships.Where(r => r.TabelaOrigemId == tableId).ToListAsync();
+            var relacionamento = await _context.Relationships.Where(r => r.TabelaDestinoId == tableId).ToListAsync();
             var retorno = _mapper.Map<List<CreateDynamicRelationshipRequest>>(relacionamento);
             retorno.ForEach(r =>
             {
-                r.NomeTelaOrigem = table.NomeTabela;
-                r.NomeTelaDestino = _context.Tables.FirstOrDefault(t => t.Id == r.TabelaDestinoId).NomeTela;
+                r.NomeTelaDestino = table.NomeTela;
+                r.NomeTelaOrigem = _context.Tables.FirstOrDefault(t => t.Id == r.TabelaOrigemId).NomeTela;
             });
             return await Result<List<CreateDynamicRelationshipRequest>>.SuccessAsync(retorno);
+        }
+
+        public async Task<IResult> DeletarRelacionamento(DynamicForIdRequest request)
+        {
+            var relacionamentoRequest = await _context.Relationships
+                .Include(t => t.TabelaDestino)
+                .Include(t => t.TabelaOrigem)
+                .FirstOrDefaultAsync(t => t.Id == request.IdRegistro);
+
+            if (relacionamentoRequest == null)
+            {
+                return await Result.FailAsync($"Relacionamento não encontrada");
+            }
+
+            var relacionamentoInverso = await _context.Relationships
+                .Include(t => t.TabelaDestino)
+                .Include(t => t.TabelaOrigem)
+                .FirstOrDefaultAsync(t => t.TabelaDestinoId == relacionamentoRequest.TabelaOrigemId && t.TabelaOrigemId == relacionamentoRequest.TabelaDestinoId);
+
+            if (relacionamentoInverso == null)
+            {
+                return await Result.FailAsync($"Inconsistncia no banco de dados, entre em contato com o suporte");
+            }
+
+            Table tableParaDeleteForeigeKey = null;
+            string nomeConstraintParaDelete = null;
+            string nomeCampoParaDelete = null;
+
+            if (relacionamentoRequest.Tipo == TypeRelationshipEnum.OneToMany)
+            {
+                tableParaDeleteForeigeKey = relacionamentoRequest.TabelaDestino;
+                nomeConstraintParaDelete = relacionamentoRequest.NomeConstraint;
+                nomeCampoParaDelete = relacionamentoRequest.CampoDestino;
+            }
+            else
+            {
+                tableParaDeleteForeigeKey = relacionamentoInverso.TabelaDestino;
+                nomeConstraintParaDelete = relacionamentoInverso.NomeConstraint;
+                nomeCampoParaDelete = relacionamentoInverso.CampoDestino;
+            }
+
+            var dropConstraintSql = $"ALTER TABLE {tableParaDeleteForeigeKey.NomeTabela} DROP CONSTRAINT {nomeConstraintParaDelete};";
+            await _context.Database.ExecuteSqlRawAsync(dropConstraintSql);
+            
+            var dropColumnSql = $"ALTER TABLE {tableParaDeleteForeigeKey.NomeTabela} DROP COLUMN {nomeCampoParaDelete};";
+            await _context.Database.ExecuteSqlRawAsync(dropColumnSql);
+
+            _context.Relationships.Remove(relacionamentoRequest);
+            _context.Relationships.Remove(relacionamentoInverso);
+
+            var campoParaDelete = await _context.Fields
+                .FirstOrDefaultAsync(f => f.NomeCampoBase == nomeCampoParaDelete && f.TableId == tableParaDeleteForeigeKey.Id);
+
+            _context.Fields.Remove(campoParaDelete);
+
+            await _context.SaveChangesAsync();
+
+            return await Result.SuccessAsync("Remoção de vinculo realizado com sucesso");
         }
 
         public async Task<IResult<CreateDynamicTableRequest>> ConsultarMapTabelaAsync(int tableId)
@@ -429,13 +429,43 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
         public async Task<IResult> DeleteMapTableAsync(int tableId)
         {
-            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == tableId);
+            var table = await _context.Tables
+                .Include(t => t.Fields)
+                .Include(t => t.RelacionamentosComoDestino)
+                .Include(t => t.RelacionamentosComoOrigem)
+                .Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId))
+                .FirstOrDefaultAsync(t => t.Id == tableId);
             if (table == null)
             {
                 return await Result.FailAsync("Tela não encontrada");
             }
 
+            var IsExisteRelacionamentoOneToMany = table.RelacionamentosComoOrigem.Any(r => r.Tipo == TypeRelationshipEnum.OneToMany);
+
+            if (IsExisteRelacionamentoOneToMany)
+            {
+                return await Result.FailAsync($"Não é possível deletar a tela '{table.NomeTela}', existem referencias dessa tela em outras telas");
+            }
+
+            // Chapeu pois o metodo 'DeletarRelacionamento' deleta a lista 'table.RelacionamentosComoDestino' e isso da erro de colletion modificaty
+            List<int> IdsParaDeletar = new List<int>(); 
+
+            if (table.RelacionamentosComoDestino != null)
+            { 
+                foreach (var relacionamento in table.RelacionamentosComoDestino)
+                {
+                    IdsParaDeletar.Add(relacionamento.Id);
+                }
+            }
+
+            foreach (int IdParaDeletar in IdsParaDeletar)
+            {
+                await DeletarRelacionamento(new DynamicForIdRequest { IdRegistro = IdParaDeletar });
+            }
+
             // Criar validação se existe relacionamento na tabela que esta sendo excluida
+            // Agora esta feito nas acima =)
+
             var sql = $"DROP TABLE {table.NomeTabela};";
             await _context.Database.ExecuteSqlRawAsync(sql);
             _context.Tables.Remove(table);

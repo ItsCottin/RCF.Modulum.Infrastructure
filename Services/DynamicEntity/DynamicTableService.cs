@@ -16,6 +16,8 @@ using modulum.Application.Interfaces.Services;
 using modulum.Shared.Enum;
 using Azure.Core;
 using Newtonsoft.Json.Linq;
+using System.Data;
+using System.Data.Common;
 
 namespace modulum.Infrastructure.Services.DynamicEntity
 {
@@ -37,74 +39,8 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             _currentUserService = currentUserService;
         }
 
-        //public async Task<IResult> CriarTabelaFisicaAsync(Table table)
-        //{
-        //    try
-        //    {
-        //        //var table = await _context.Tables.Include(t => t.Fields).FirstOrDefaultAsync(t => t.Id == tableId);
-        //
-        //        if (table == null)
-        //            return await Result.FailAsync("Tabela não encontrada.");
-        //
-        //        //string tableName = table.NomeTabela.Replace(" ", "_");
-        //
-        //        var columns = table.Fields.Select(f =>
-        //        {
-        //            string column = $"{f.NomeCampoBase} {f.Tipo}";
-        //
-        //            if (f.Tamanho.HasValue && (f.Tipo.ToString().Equals("VARCHAR", StringComparison.OrdinalIgnoreCase)))
-        //            {
-        //                column += $"({f.Tamanho})";
-        //            }
-        //
-        //            if (f.IsPrimaryKey) // Adicionar validação para caso IsPrimaryKey = true vier em mais de um campo
-        //                column += " PRIMARY KEY IDENTITY";
-        //
-        //            return column;
-        //        });
-        //
-        //        string createTableQuery = $"CREATE TABLE {table.NomeTabela} ({string.Join(", ", columns)});";
-        //
-        //        await _context.Database.ExecuteSqlRawAsync(createTableQuery);
-        //        return Result.Success("Tabela criada com sucesso");
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        _context.Fields.RemoveRange(table.Fields);
-        //        _context.Tables.Remove(table);
-        //        await _context.SaveChangesAsync();
-        //        return await Result.FailAsync(ex.Message);
-        //    }
-        //}
-
         public async Task<IResult> InsertAsync(DynamicTableRequest request)
         {
-            // Implementar futuramente aqui as permissoes de acesso dada do usuario criador da tabela a outros usuarios registrados
-            // Codigo antigo, apenas comentado caso o novo codigo nao funcionar
-            //var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.Id);
-            //
-            //if (table == null)
-            //    return await Result.FailAsync("Tabela não encontrada.");
-            //
-            //foreach (var registro in request.Resultados)
-            //{
-            //    var columns = new List<string>();
-            //    var values = new List<string>();
-            //
-            //    foreach (var field in registro.Valores)
-            //    {
-            //        var columnName = field.NomeCampoBase;
-            //        var valor = FormatSqlValue(field.Tipo.ToString(), field.Valor);
-            //        columns.Add(columnName);
-            //        values.Add(valor);
-            //    }
-            //
-            //    var sql = $"INSERT INTO {table.NomeTabela} ({string.Join(",", columns)}) VALUES ({string.Join(",", values)});";
-            //    await _context.Database.ExecuteSqlRawAsync(sql);
-            //}
-            //
-            //return await Result.SuccessAsync("Registro incluído com sucesso"); ;
-
             var table = await _context.Tables.Include(t => t.Fields).FirstOrDefaultAsync(t => t.Id == request.Id && t.IdUsuario == int.Parse(_currentUserService.UserId));
 
             if (table == null)
@@ -186,7 +122,11 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
         public async Task<IResult> DeletePorIdAsync(DynamicForIdRequest request)
         {
-            var table = await _context.Tables.Include(t => t.Fields).Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId)).FirstOrDefaultAsync(t => t.Id == request.IdTable);
+            var table = await _context.Tables
+                .Include(t => t.Fields)
+                .Include(r => r.RelacionamentosComoDestino)
+                .Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId))
+                .FirstOrDefaultAsync(t => t.Id == request.IdTable);
 
             if (table == null)
                 return await Result.FailAsync("Tela não encontrada.");
@@ -195,21 +135,50 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
             foreach (var r in relacionamentos)
             {
-                var select = $"SELECT COUNT(1) FROM {r.TabelaDestino.NomeTabela} WHERE {r.CampoDestino} = {request.IdRegistro};";
-
+                var tableDestino = await _context.Tables.FirstOrDefaultAsync(t => t.Id == r.TabelaDestinoId && t.IdUsuario == int.Parse(_currentUserService.UserId));
+            
+                //var select = $"SELECT COUNT(1) FROM {tableDestino.NomeTabela} WHERE {r.CampoDestino} = {request.IdRegistro};";
+            
                 // Executa a consulta e verifica se existem registros
-                using var connection = _context.Database.GetDbConnection();
-                await connection.OpenAsync();
+                //using var connection = _context.Database.GetDbConnection();
+                //await connection.OpenAsync();
+                //
+                //using var command = connection.CreateCommand();
+                //command.CommandText = select;
+                //
+                //var result = await command.ExecuteScalarAsync();
+                //int count = Convert.ToInt32(result);
+            
+                var select = $"SELECT COUNT(1) FROM {tableDestino.NomeTabela} WHERE {r.CampoDestino} = @Id";
 
-                using var command = connection.CreateCommand();
-                command.CommandText = select;
+                int count = 0;
 
-                var result = await command.ExecuteScalarAsync();
-                int count = Convert.ToInt32(result);
+                DbConnection connection = _context.Database.GetDbConnection();
+
+                if (connection.State != ConnectionState.Open)
+                    await connection.OpenAsync();
+
+                using (DbCommand command = connection.CreateCommand()) 
+                {
+                    command.CommandText = select;
+
+                    var parameter = command.CreateParameter();
+                    parameter.ParameterName = "@Id";
+                    parameter.Value = request.IdRegistro;
+                    command.Parameters.Add(parameter);
+
+                    var result = await command.ExecuteScalarAsync();
+                    count = Convert.ToInt32(result);
+                }
+
+                if (connection.State.Equals(ConnectionState.Open))
+                {
+                    connection.Close();
+                }
 
                 if (count > 0)
                 {
-                    return await Result.FailAsync($"Existem registros na tabela '{r.TabelaDestino.NomeTabela}' que referenciam o registro com o registro que voce esta tentando excluir '{request.IdRegistro}'.");
+                    return await Result.FailAsync($"Não foi possível excluir, Existem registros na tabela '{r.TabelaDestino.NomeTela}' que referenciam com o registro que voce esta tentando excluir");
                 }
             }
 
@@ -243,7 +212,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
             var sql = $"SELECT {string.Join(",", colunas)} FROM {table.NomeTabela};";
             var registros = new List<DynamicDadoRequest>();
             var relacionamentos = _context.Relationships
-                .Include(r => r.TabelaDestino).Where(r => r.TabelaOrigemId == table.Id).ToList();
+                .Include(r => r.TabelaOrigem).Where(r => r.TabelaDestinoId == table.Id).ToList();
 
             // Pré-carrega todas as opções de campos estrangeiros em memória
             var opcoesRelacionamentos = new Dictionary<string, List<DynamicOpcaoRequest>>();
@@ -253,9 +222,9 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
                 foreach (var relacionamento in relacionamentos)
                 {
-                    if (relacionamento.TabelaDestino != null && !string.IsNullOrWhiteSpace(relacionamento.CampoParaExibicaoRelacionamento))
+                    if (relacionamento.TabelaOrigem != null && !string.IsNullOrWhiteSpace(relacionamento.CampoParaExibicaoRelacionamento))
                     {
-                        var sqlOpcoes = $"SELECT {relacionamento.TabelaDestino.CampoPK}, {relacionamento.CampoParaExibicaoRelacionamento} FROM {relacionamento.TabelaDestino.NomeTabela};";
+                        var sqlOpcoes = $"SELECT {relacionamento.TabelaOrigem.CampoPK}, {relacionamento.CampoParaExibicaoRelacionamento} FROM {relacionamento.TabelaOrigem.NomeTabela};";
                         using var commandOpcoes = connection.CreateCommand();
                         commandOpcoes.CommandText = sqlOpcoes;
                         using var readerOpcoes = await commandOpcoes.ExecuteReaderAsync();
@@ -265,11 +234,11 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                         {
                             opcoes.Add(new DynamicOpcaoRequest
                             {
-                                IdRegistro = Convert.ToInt32(readerOpcoes[relacionamento.TabelaDestino.CampoPK]),
+                                IdRegistro = Convert.ToInt32(readerOpcoes[relacionamento.TabelaOrigem.CampoPK]),
                                 ValorExibicao = readerOpcoes[relacionamento.CampoParaExibicaoRelacionamento]?.ToString()
                             });
                         }
-                        opcoesRelacionamentos[relacionamento.CampoOrigem] = opcoes;
+                        opcoesRelacionamentos[relacionamento.CampoDestino] = opcoes;
                     }
                 }
 
@@ -456,7 +425,11 @@ namespace modulum.Infrastructure.Services.DynamicEntity
         {
             var table = await _context.Tables
                 .Include(t => t.Fields)
-                .Include(t => t.RelacionamentosComoOrigem) // Inclui os relacionamentos
+
+                // Buscar "RelacionamentosComoDestino" pois é na tabela destino que contem o campo ForeigeKey
+                // Lembrando, conceito "Origem" é onde contem a primarey key que foi para o tabela "Destino"
+                // Só anotando isso mesmo pq eu tenho certeza que foi esquecer no futuro =)
+                .Include(t => t.RelacionamentosComoDestino) 
                 .Where(u => u.IdUsuario == int.Parse(_currentUserService.UserId))
                 .FirstOrDefaultAsync(t => t.Id == idTabela);
 
@@ -490,9 +463,8 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                     }
                     else if (campo.IsForeigeKey)
                     {
-                        // Busca o relacionamento correspondente
-                        var relacionamento = table.RelacionamentosComoOrigem
-                            .FirstOrDefault(r => r.CampoOrigem == campo.NomeCampoBase);
+                        var relacionamento = table.RelacionamentosComoDestino
+                            .FirstOrDefault(r => r.CampoDestino == campo.NomeCampoBase);
 
                         relacionamento.TabelaOrigem = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaOrigemId);
                         relacionamento.TabelaDestino = await _context.Tables.FirstOrDefaultAsync(t => t.Id == relacionamento.TabelaDestinoId);
@@ -501,8 +473,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
                         if (relacionamento != null)
                         {
-                            // Monta a consulta para buscar os valores da tabela relacionada
-                            var sqlOpcoes = $@"SELECT {relacionamento.TabelaDestino.CampoPK}, {relacionamento.CampoParaExibicaoRelacionamento} FROM {relacionamento.TabelaDestino.NomeTabela};";
+                            var sqlOpcoes = $@"SELECT {relacionamento.TabelaOrigem.CampoPK}, {relacionamento.CampoParaExibicaoRelacionamento} FROM {relacionamento.TabelaOrigem.NomeTabela};";
 
                             using var connection = _context.Database.GetDbConnection();
                             await connection.OpenAsync();
@@ -515,13 +486,12 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                             {
                                 opcoes.Add(new DynamicOpcaoRequest
                                 {
-                                    IdRegistro = Convert.ToInt32(reader[relacionamento.TabelaDestino.CampoPK]),
+                                    IdRegistro = Convert.ToInt32(reader[relacionamento.TabelaOrigem.CampoPK]),
                                     ValorExibicao = reader[relacionamento.CampoParaExibicaoRelacionamento]?.ToString()
                                 });
                             }
                         }
 
-                        // Adiciona o campo com as opções
                         resultado.Valores.Add(new DynamicFieldRequest
                         {
                             NomeCampoBase = campo.NomeCampoBase,
@@ -539,7 +509,6 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                     }
                     else
                     {
-                        // Adiciona campos normais sem opções
                         resultado.Valores.Add(new DynamicFieldRequest
                         {
                             NomeCampoBase = campo.NomeCampoBase,
