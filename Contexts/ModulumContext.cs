@@ -46,6 +46,7 @@ namespace modulum.Infrastructure.Contexts
         public DbSet<Field> Fields { get; set; }
         public DbSet<Relationship> Relationships { get; set; }
         public DbSet<NugetPacote> NugetPacotes { get; set; }
+        public DbSet<Projeto> projetos { get; set; }
 
         public DbSet<TwoFactor> TwoFactors { get; set; }
 
@@ -59,7 +60,7 @@ namespace modulum.Infrastructure.Contexts
                 entity.Property(e => e.Id).ValueGeneratedOnAdd();
                 entity.Property(e => e.RefreshToken).IsRequired(false);
                 entity.Property(e => e.IsCadastroFinalizado).HasDefaultValue(true);
-                entity.Property(e => e.Cpf).IsUnicode(false).HasMaxLength(11).IsRequired(false);
+                entity.Property(e => e.Cpf).IsUnicode(false).HasMaxLength(14).IsRequired(false);
 
                 // Campos removidos do IdentityUser
                 entity.Ignore(e => e.PhoneNumber);
@@ -145,6 +146,15 @@ namespace modulum.Infrastructure.Contexts
             builder.Entity<NugetPacote>(entity =>
             {
                 entity.ToTable("tbl_versao", "dbo");
+                entity.HasOne(p => p.Projeto)
+                  .WithMany(p => p.Pacotes)
+                  .HasForeignKey(p => p.ProjetoId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            builder.Entity<Projeto>(entity =>
+            {
+                entity.ToTable("tbl_projeto", "dbo");
             });
         }
     }

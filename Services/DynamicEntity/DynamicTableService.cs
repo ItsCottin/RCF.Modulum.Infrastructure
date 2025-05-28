@@ -190,11 +190,12 @@ namespace modulum.Infrastructure.Services.DynamicEntity
 
         private string FormatSqlValue(string tipo, object valor)
         {
+            
             return tipo.ToLower() switch
             {
                 "varchar" or "string" => $"'{valor}'",
-                "date" => $"'{Convert.ToDateTime(valor):yyyy-MM-dd HH:mm:ss}'",
-                "int" or "integer" => valor.ToString(),
+                "date" => string.IsNullOrWhiteSpace(valor.ToString()) ? "null" : $"'{Convert.ToDateTime(valor):yyyy-MM-dd HH:mm:ss}'", // Correção para casos que a data não ser obrigatória
+                "int" or "integer" => valor == null ? "null" : string.IsNullOrWhiteSpace(valor.ToString()) ? "null" : valor.ToString(),
                 "bit" or "boolean" => valor.ToString(),
                 _ => $"'{valor}'"
             };
@@ -257,10 +258,15 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                             valorLido = valorLido.Equals("True") ? "1" : "0";
                         }
 
-                        // Busca as opções já carregadas em memória
+                        //var opcoes = new List<DynamicOpcaoRequest?>() { new DynamicOpcaoRequest { IdRegistro = null, ValorExibicao = "Selecione uma opção" } };
+
                         var opcoes = campo.IsForeigeKey && opcoesRelacionamentos.ContainsKey(campo.NomeCampoBase)
                             ? opcoesRelacionamentos[campo.NomeCampoBase].Cast<DynamicOpcaoRequest?>().ToList()
                             : new List<DynamicOpcaoRequest?>();
+
+                        //opcoes.AddRange(opcoesDaBase);
+
+                        
 
                         valores.Add(new DynamicFieldRequest
                         {

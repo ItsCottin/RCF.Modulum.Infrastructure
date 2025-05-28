@@ -4,8 +4,11 @@ using modulum.Application.Requests.Versao;
 using modulum.Application.Responses.Versao;
 using modulum.Domain.Entities;
 using modulum.Domain.Entities.DynamicEntity;
+using modulum.Infrastructure.Contexts;
+using SendGrid.Helpers.Mail;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -15,96 +18,95 @@ namespace modulum.Infrastructure.Repositories
     public class VersaoRepository : IVersaoRepository
     {
         private readonly IRepositoryAsync<NugetPacote, int> _repository;
+        private readonly ModulumContext _context;
 
-        public VersaoRepository(IRepositoryAsync<NugetPacote, int> repository)
+        public VersaoRepository
+        (
+            IRepositoryAsync<NugetPacote, int> repository,
+            ModulumContext context
+        )
         {
             _repository = repository;
+            _context = context;
         }
 
-        public async Task<bool> Update(PackageListResultRequest request)
+        public async Task<bool> Update(string? versao, PackageListResultRequest request)
         {
-            var novosPacotes = MapearParaTabela(request);
+            var novosProjetos = MapearParaTabela(versao, request);
 
-            // Agrupar por projeto (PacoteRaiz)
-            var gruposPorProjeto = novosPacotes.GroupBy(x => x.PacoteRaiz);
-
-            foreach (var grupo in gruposPorProjeto)
+            foreach (var novoProjeto in novosProjetos)
             {
-                var pacoteRaiz = grupo.Key;
-                var novos = grupo.ToList();
+                // Verifica se já existe um projeto com o mesmo nome
+                var projetoExistente = await _context.Set<Projeto>()
+                    .FirstOrDefaultAsync(p => p.Nome == novoProjeto.Nome);
 
-                // Buscar os registros existentes no banco para esse projeto
-                var existentes = await _repository.Entities
-                    .Where(x => x.PacoteRaiz == pacoteRaiz)
-                    .ToListAsync();
-
-                // Atualizar e adicionar
-                foreach (var novo in novos)
+                if (projetoExistente == null)
                 {
-                    var existente = existentes.FirstOrDefault(x => x.Pacote == novo.Pacote);
-                    if (existente != null)
-                    {
-                        // Atualizar se as versões mudaram
-                        if (existente.ResolvedVersion != novo.ResolvedVersion ||
-                            existente.RequestedVersion != novo.RequestedVersion ||
-                            existente.Framework != novo.Framework)
-                        {
-                            existente.RequestedVersion = novo.RequestedVersion;
-                            existente.ResolvedVersion = novo.ResolvedVersion;
-                            existente.Framework = novo.Framework;
-                            await _repository.UpdateAsync(existente);
-                        }
+                    await _context.Set<Projeto>().AddAsync(novoProjeto);
+                }
+                else
+                {
+                    // Chapeu, remove todos os pacote da base para adicionar novamente com os pacotes do request
+                    await _context.NugetPacotes.Where(p => p.ProjetoId == projetoExistente.Id).ExecuteDeleteAsync();
 
-                        // Remove da lista de existentes, porque ele foi tratado
-                        existentes.Remove(existente);
-                    }
-                    else
-                    {
-                        // Novo pacote, adicionar
-                        await _repository.AddAsync(novo);
-                    }
+                    // Atualiza versão do projeto
+                    projetoExistente.Versao = novoProjeto.Versao;
+                    projetoExistente.Pacotes = novoProjeto.Pacotes;
+
+                    _context.Update(projetoExistente);
                 }
 
-                // Remover os que sobraram (não estão mais no projeto)
-                foreach (var excluido in existentes)
-                {
-                    await _repository.DeleteAsync(excluido);
-                }
-
-                // Após delete ou update, aplicar as mudanças
-                await _repository.SaveChangesAsync(); // Só se você criar esse método no repository base
+                await _context.SaveChangesAsync();
             }
 
             return true;
         }
 
-        public List<NugetPacote> MapearParaTabela(PackageListResultRequest json)
+        public List<Projeto> MapearParaTabela(string? versao, PackageListResultRequest json)
         {
-            var pacotes = new List<NugetPacote>();
+
+            List<Projeto> projetos = new List<Projeto>();
 
             foreach (var projeto in json.Projects)
             {
+
                 if (projeto.Frameworks == null)
                     continue;
 
-                foreach (var framework in projeto.Frameworks)
+                projetos.Add(new Projeto
                 {
-                    if (framework.TopLevelPackages == null)
-                        continue;
+                    Nome = Path.GetFileNameWithoutExtension(projeto?.Path ?? string.Empty),
+                    Versao = versao ?? "demo",
+                    Pacotes = MapearPacotes(projeto)
+                });
 
-                    foreach (var pacote in framework.TopLevelPackages)
+                
+            }
+            return projetos;
+        }
+
+        public List<NugetPacote> MapearPacotes(ProjectInfoRequest projeto)
+        {
+
+            var pacotes = new List<NugetPacote>();
+
+            foreach (var framework in projeto.Frameworks)
+            {
+                if (framework.TopLevelPackages == null)
+                    continue;
+
+                foreach (var pacote in framework.TopLevelPackages)
+                {
+                    pacotes.Add(new NugetPacote
                     {
-                        pacotes.Add(new NugetPacote
-                        {
-                            Pacote = pacote.Id,
-                            RequestedVersion = pacote.RequestedVersion,
-                            ResolvedVersion = pacote.ResolvedVersion,
-                            Framework = framework.Framework,
-                            PacoteRaiz = projeto.Path
-                        });
-                    }
+                        Pacote = pacote.Id,
+                        RequestedVersion = pacote.RequestedVersion,
+                        ResolvedVersion = pacote.ResolvedVersion,
+                        Framework = framework.Framework
+                    });
                 }
             }
+
             return pacotes;
         }
     }

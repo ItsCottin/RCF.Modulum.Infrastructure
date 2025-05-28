@@ -42,9 +42,9 @@ namespace RCF.Modulum.Infrastructure.Services.Versao
             return await Result<List<VersaoResponse>>.SuccessAsync(response, "Lista de pacotes e versões");
         }
 
-        public async Task<bool> AddEditPacotes(PackageListResultRequest request)
+        public async Task<bool> AddEditPacotes(string? versao, PackageListResultRequest request)
         {
-            return await _versaoRepository.Update(request);
+            return await _versaoRepository.Update(versao, request);
         }
     }
 }
