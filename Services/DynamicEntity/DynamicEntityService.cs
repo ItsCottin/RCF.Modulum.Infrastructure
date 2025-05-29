@@ -146,6 +146,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                 relacionamentos.Add(relacionamento);
 
                 // Avaliar a nescessidade de armazenar o relacionamento "voltando"
+                // Avaliado e foi nescessario
                 relacionamentos.Add(new Relationship 
                 {
                     TabelaOrigemId = tableDestino.Id,
@@ -157,6 +158,7 @@ namespace modulum.Infrastructure.Services.DynamicEntity
                     NomeConstraint = fkName,
                     IsObrigatorio = relacionamento.IsObrigatorio,
                     Tipo = TypeRelationshipEnum.ManyToOne // Se for nescessario, avaliar qual tipo usar para o relacionamento "voltando"
+                                                          // Avaliado, e foi utilizado o tipo 'ManyToOne'
                 });
 
                 await _context.Relationships.AddRangeAsync(relacionamentos);

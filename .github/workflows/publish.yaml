@@ -90,23 +90,24 @@ jobs:
         run: |
           dotnet list package --format json > nuget-packages.json
 
-#      - name: Get JWT Token from API
-#        id: get_token
-#        run: |
-#          RESPONSE=$(curl -s -X POST \
-#            -H "Content-Type: application/json" \
-#            -d "{\"email\":\"${{ secrets.REGISTER_USER }}\",\"password\":\"${{ secrets.REGISTER_PASSWORD }}\"}" \
-#            "${{ secrets.URL_API_LOGIN }}")
-#
-#          echo "token=$RESPONSE" >> $GITHUB_ENV
-#
-#      - name: Send NuGet Info to API
-#        run: |
-#          curl -s -X POST \
-#            -H "Authorization: Bearer ${{ env.token }}" \
-#            -H "Content-Type: application/json" \
-#            --data-binary @nuget-packages.json \
-#            "${{ secrets.URL_API_REGISTER_NUGET }}"
+      - name: Get JWT Token from API
+        id: get_token
+        run: |
+          RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${{ secrets.REGISTER_USER }}\",\"password\":\"${{ secrets.REGISTER_PASSWORD }}\"}" \
+            "${{ secrets.URL_API_LOGIN }}")
+
+          echo "token=$RESPONSE" >> $GITHUB_ENV
+
+      - name: Send NuGet Info to API
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ env.token }}" \
+            -H "versao: ${{ env.new_version }}" \
+            -H "Content-Type: application/json" \
+            --data-binary @nuget-packages.json \
+            "${{ secrets.URL_API_REGISTER_NUGET }}"
         # fim Immplementação do registro de versao
 
       - name: Pack NuGet Package
